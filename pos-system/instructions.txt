@@ -1,0 +1,163 @@
+Here is your Laptop B (Store POS) Only Playbook. Ignore everything about HQ setup—this is just for the cashier's machine.
+
+Step 1: Prep Laptop B (One-Time Setup)
+Open Command Prompt (or PowerShell) as Administrator.
+
+Install the required library to talk to the internet/network:
+
+cmd
+pip install requests
+Step 2: Modify the POS Database (Add the Upload Flag)
+Hegxib’s database doesn't know which sales have been uploaded yet. We need to add a column to track that.
+
+Navigate to your Hegxib folder (where pos_system.db lives) in the terminal:
+
+cmd
+cd "C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System"
+Run this single command to add the column:
+
+cmd
+python -c "import sqlite3; conn=sqlite3.connect('pos_system.db'); cursor=conn.cursor(); cursor.execute('ALTER TABLE sales ADD COLUMN synced_to_cloud INTEGER DEFAULT 0'); conn.commit(); conn.close(); print('✅ DB ready.')"
+Verify it worked:
+
+cmd
+python -c "import sqlite3; conn=sqlite3.connect('pos_system.db'); cursor=conn.cursor(); cursor.execute('PRAGMA table_info(sales)'); print([col[1] for col in cursor.fetchall()])"
+You should see ['id', 'timestamp', 'total_amount', 'synced_to_cloud'] in the output. If you see that, you are good to go.
+
+Step 3: Create the Sending Script (store_sync_agent.py)
+Create a new file inside your Hegxib folder called store_sync_agent.py.
+
+Copy and paste this exact code. You must change the IP address on Line 9.
+
+python
+import sqlite3
+import requests
+import time
+import os
+
+# ==========================================
+# !!! IMPORTANT: CHANGE THIS IP ADDRESS !!!
+# ==========================================
+# Replace 192.168.1.100 with the ACTUAL IP address of Laptop A (HQ).
+# To find Laptop A's IP, run 'ipconfig' on Laptop A and look for IPv4.
+HQ_API_URL = "http://192.168.1.100:5000/ingest"  # <--- CHANGE THIS
+
+# Give this store a unique name (use different names if you have multiple stores)
+STORE_ID = "STORE_001"
+
+# Path to your Hegxib database (keep it as-is if the script is in the same folder)
+DB_PATH = "pos_system.db"
+
+# ------------------------------------------
+# DO NOT CHANGE ANYTHING BELOW THIS LINE
+# ------------------------------------------
+
+def sync_pending_sales():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # Grab sales that haven't been sent yet
+        cursor.execute("""
+            SELECT id, timestamp, total_amount 
+            FROM sales 
+            WHERE synced_to_cloud = 0 
+            ORDER BY timestamp
+        """)
+        pending_sales = cursor.fetchall()
+
+        if not pending_sales:
+            return  # Nothing to do
+
+        print(f"📤 Sending {len(pending_sales)} sales to HQ...")
+
+        for sale in pending_sales:
+            sale_id = sale[0]
+            payload = {
+                "store_id": STORE_ID,
+                "sale_id": sale_id,
+                "timestamp": sale[1],
+                "total_amount": sale[2]
+            }
+
+            # Send to Laptop A (HQ)
+            response = requests.post(HQ_API_URL, json=payload, timeout=5)
+
+            if response.status_code == 200:
+                # Mark as synced so we never send it again
+                cursor.execute("""
+                    UPDATE sales 
+                    SET synced_to_cloud = 1 
+                    WHERE id = ?
+                """, (sale_id,))
+                conn.commit()
+                print(f"   ✅ Sale #{sale_id} synced.")
+            else:
+                print(f"   ❌ HQ Error {response.status_code}. Stopping for now.")
+                break  # Stop trying if HQ is down
+
+        conn.close()
+
+    except requests.exceptions.ConnectionError:
+        print("⚠️  Cannot reach HQ. Is Laptop A running the Flask server?")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+
+# --- Run forever ---
+if __name__ == "__main__":
+    print(f"🚀 POS Sync Agent started for {STORE_ID}")
+    print(f"📡 Target HQ: {HQ_API_URL}")
+    while True:
+        sync_pending_sales()
+        time.sleep(30)  # Wait 30 seconds before checking again
+Step 4: Manual Test (Run it once)
+Open Hegxib (python main.py), log in with admin123, and sell 1 item (just to generate a new unsynced sale).
+
+Close Hegxib (or leave it open, it doesn't matter).
+
+In your terminal, run the agent manually:
+
+cmd
+python store_sync_agent.py
+Check the output:
+
+If you see 📤 Sending 1 sales to HQ... ✅ Sale #X synced. → Success! Your POS laptop can talk to HQ.
+
+If you see ⚠️ Cannot reach HQ → Check the IP address. Make sure Laptop A is turned on, the Flask server is running, and the IP in the script is 100% correct.
+
+Step 5: Automate it (So it runs every time the POS boots)
+You don't want the cashier to manually run this script every morning. Set it up as a Windows Background Service using Task Scheduler.
+
+Press Win + R, type taskschd.msc, and press Enter.
+
+In the right-hand panel, click "Create Basic Task".
+
+Name: POS Cloud Sync
+
+Trigger: Select "When the computer starts".
+
+Action: Select "Start a program".
+
+Program/script: Click Browse and navigate to your python.exe.
+
+Pro-tip: To find the exact path, open CMD and type where python. Copy the full path (e.g., C:\Users\YourName\AppData\Local\Programs\Python\Python312\python.exe).
+
+Add arguments (optional): Paste the full path to your script. Example:
+
+text
+"C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System\store_sync_agent.py"
+Start in (optional): Paste the folder path. Example:
+
+text
+C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System
+Click Finish.
+
+Summary Checklist for Laptop B
+Task	Status
+✅ Installed requests library	⬜
+✅ Added synced_to_cloud column to database	⬜
+✅ Created store_sync_agent.py with correct HQ IP	⬜
+✅ Sold 1 item and manually ran the script (Test)	⬜
+✅ Setup Task Scheduler to auto-start on boot	⬜
+One final warning for Laptop B:
+If Laptop A (HQ) is turned off or the network is down, this script will just print ⚠️ Cannot reach HQ and quietly wait 30 seconds before trying again. It will never delete or lose your sales data—they stay marked as synced_to_cloud = 0 until HQ comes back online. Your POS will keep working perfectly offline.
