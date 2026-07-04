@@ -10,6 +10,7 @@ import categories_template
 import central_data
 import news
 import pos_data
+import reports
 import segregation
 import tn_categories
 
@@ -159,6 +160,36 @@ def location_insights(location: str = "all", _user: str = Depends(auth.require_s
 def news_for_location(location: str = "main", _user: str = Depends(auth.require_session)):
     label = central_data.label_for_store(location) if location not in ("main", "all") else None
     return news.fetch_news(location, label)
+
+
+@app.post("/api/reports/generate")
+def reports_generate(_user: str = Depends(auth.require_session)):
+    return reports.generate_report()
+
+
+@app.get("/api/reports")
+def reports_list(_user: str = Depends(auth.require_session)):
+    return reports.list_reports()
+
+
+@app.get("/api/reports/{report_id}")
+def reports_get(report_id: str, _user: str = Depends(auth.require_session)):
+    report = reports.get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+
+@app.post("/api/reports/{report_id}/send-to-llm")
+def reports_send_to_llm(report_id: str, _user: str = Depends(auth.require_session)):
+    """Extension point: forwarding a generated report's narrative to an LLM
+    for deeper/qualitative analysis is intentionally not implemented yet
+    (the whole point of this report is a cheap, classical-only baseline).
+    When it is: load the report via reports.get_report(report_id), send its
+    "narrative" field as context, and return the model's response here."""
+    if reports.get_report(report_id) is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    raise HTTPException(status_code=501, detail="LLM analysis isn't enabled yet.")
 
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")

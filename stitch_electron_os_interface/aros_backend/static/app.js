@@ -5,6 +5,7 @@ let wizardGroups = []; // [{ id, name, barcodes: [] }]
 let currentCurrency = "$";
 let currentLocation = "main"; // "main" | "all" | a Tamil Nadu store_id
 let currentNewsLocation = "main";
+let currentReportId = null;
 
 // ---------- theme tokens ----------
 // Applied via style.setProperty rather than a stylesheet rule - a bare
@@ -89,6 +90,8 @@ document.querySelectorAll(".nav-link").forEach((el) => {
       openWizard();
     } else if (el.dataset.view === "news") {
       showNews();
+    } else if (el.dataset.view === "reports") {
+      showReports();
     } else {
       showView(el.dataset.view);
     }
@@ -562,6 +565,222 @@ async function refreshNews() {
     btn.disabled = false;
     btn.classList.remove("opacity-50", "cursor-not-allowed");
     setTimeout(() => { label.textContent = originalText; }, 1000);
+  }
+}
+
+// ---------- insights reports ----------
+// Classical (non-LLM) analysis, generated on demand and saved to a file by
+// the backend (aros_backend/reports.py). The "Full Report Text" block is
+// exactly the payload a future LLM integration would receive - see
+// sendReportToLLM(), currently a stub the backend answers with 501.
+
+function renderReportSection(section) {
+  const { title, currency, analysis } = section;
+  const s = analysis.summary;
+
+  if (s.transactions === 0) {
+    return `
+      <div class="glass-panel rounded-lg p-6 mb-6">
+        <h3 class="text-lg font-bold mb-2">${escapeHtml(title)}</h3>
+        <p class="text-sm text-on-surface-variant">No sales data available for this section.</p>
+      </div>`;
+  }
+
+  const trend = analysis.trend;
+  const conc = analysis.concentration;
+  const trendColor = trend.direction === "growing" ? "text-data-positive" : trend.direction === "declining" ? "text-data-negative" : "text-on-surface";
+
+  const categoryRows = analysis.pareto.by_category
+    .map(
+      (r) => `<tr class="border-t border-outline-variant/50">
+        <td class="px-4 py-2">${escapeHtml(r.name)}</td>
+        <td class="px-4 py-2 text-right">${currency}${r.revenue.toFixed(2)}</td>
+        <td class="px-4 py-2 text-right">${r.cumulative_pct}%</td>
+        <td class="px-4 py-2 text-center">${pill(r.top_performer)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const moverRows = analysis.trend_shifts.by_product
+    .slice(0, 5)
+    .map(
+      (m) => `<tr class="border-t border-outline-variant/50">
+        <td class="px-4 py-2">${escapeHtml(m.name)}</td>
+        <td class="px-4 py-2 text-right">${delta(m.pct_change)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const seasonalityRows = analysis.seasonality
+    .map(
+      (d) => `<tr class="border-t border-outline-variant/50">
+        <td class="px-4 py-2">${d.weekday}</td>
+        <td class="px-4 py-2 text-right">${currency}${d.avg_revenue.toFixed(2)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const stockoutsText = analysis.stockouts.length ? escapeHtml(analysis.stockouts.join(", ")) : "None";
+
+  return `
+    <div class="glass-panel rounded-lg p-6 mb-6">
+      <h3 class="text-lg font-bold mb-4">${escapeHtml(title)}</h3>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-surface-variant/20 rounded p-3">
+          <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">REVENUE</span>
+          <span class="text-lg font-black">${currency}${s.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </div>
+        <div class="bg-surface-variant/20 rounded p-3">
+          <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">TRANSACTIONS</span>
+          <span class="text-lg font-black">${s.transactions}</span>
+        </div>
+        <div class="bg-surface-variant/20 rounded p-3">
+          <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">PRODUCTS TRACKED</span>
+          <span class="text-lg font-black">${s.products_tracked}</span>
+        </div>
+        <div class="bg-surface-variant/20 rounded p-3">
+          <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">STOCKOUTS</span>
+          <span class="text-lg font-black text-data-negative">${s.stockouts}</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-sm">
+        <div class="border border-outline-variant rounded p-3">
+          <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">REVENUE TREND (LEAST SQUARES)</span>
+          <span class="font-bold ${trendColor}">${trend.direction}</span>
+          <span class="text-on-surface-variant"> (${currency}${trend.slope_per_day.toFixed(2)}/day, R²=${trend.r_squared})</span>
+        </div>
+        <div class="border border-outline-variant rounded p-3">
+          <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">REVENUE CONCENTRATION (HHI)</span>
+          <span class="font-bold">Category:</span> ${conc.by_category.level} (${conc.by_category.hhi}) ·
+          <span class="font-bold">Product:</span> ${conc.by_product.level} (${conc.by_product.hhi})
+        </div>
+      </div>
+
+      ${categoryRows ? `
+      <h4 class="font-bold text-sm mb-2">Pareto (80/20) — by Category</h4>
+      <table class="w-full text-left font-data-code text-xs mb-6">
+        <thead class="bg-surface-variant/30 text-on-surface-variant uppercase text-[10px]">
+          <tr><th class="px-4 py-2">Category</th><th class="px-4 py-2 text-right">Revenue</th><th class="px-4 py-2 text-right">Cum. %</th><th class="px-4 py-2 text-center">Status</th></tr>
+        </thead>
+        <tbody>${categoryRows}</tbody>
+      </table>` : ""}
+
+      ${moverRows ? `
+      <h4 class="font-bold text-sm mb-2">Biggest Week-over-Week Movers</h4>
+      <table class="w-full text-left font-data-code text-xs mb-6"><tbody>${moverRows}</tbody></table>` : ""}
+
+      ${seasonalityRows ? `
+      <h4 class="font-bold text-sm mb-2">Day-of-Week Seasonality</h4>
+      <table class="w-full text-left font-data-code text-xs mb-4"><tbody>${seasonalityRows}</tbody></table>` : ""}
+
+      <p class="text-xs text-on-surface-variant"><span class="font-bold text-on-surface">Out of stock:</span> ${stockoutsText}</p>
+    </div>
+  `;
+}
+
+function renderReport(report) {
+  currentReportId = report.id;
+  document.getElementById("report-empty-state").classList.add("hidden");
+  const generatedAt = new Date(report.generated_at).toLocaleString();
+
+  const sectionsHtml = report.sections.length
+    ? report.sections.map(renderReportSection).join("")
+    : `<div class="glass-panel rounded-lg p-6 text-sm text-on-surface-variant">No sales data was available when this report was generated.</div>`;
+
+  document.getElementById("report-content").innerHTML = `
+    <p class="text-xs text-on-surface-variant mb-4">Generated ${generatedAt} — ${escapeHtml(report.method)}</p>
+    ${sectionsHtml}
+    <div class="glass-panel rounded-lg p-6">
+      <h3 class="text-sm font-bold mb-3">Full Report Text</h3>
+      <p class="text-xs text-on-surface-variant mb-3">This is exactly what would be forwarded to an LLM for deeper, qualitative analysis.</p>
+      <pre class="font-data-code text-xs whitespace-pre-wrap bg-deep-obsidian text-on-surface rounded p-4 max-h-72 overflow-y-auto border border-outline-variant">${escapeHtml(report.narrative)}</pre>
+      <div class="flex items-center gap-4 mt-4">
+        <button class="flex items-center space-x-2 border border-electric-blue text-electric-blue font-bold px-4 py-2 rounded transition-transform active:scale-95 hover:bg-electric-blue hover:text-deep-obsidian" id="send-to-llm-btn" onclick="sendReportToLLM()">
+          <span class="material-symbols-outlined text-sm">psychology</span>
+          <span class="font-label-caps text-[10px]">SEND TO LLM →</span>
+        </button>
+        <span class="text-xs text-on-surface-variant" id="send-to-llm-status"></span>
+      </div>
+    </div>
+  `;
+}
+
+async function loadReportHistory(selectedId) {
+  const select = document.getElementById("report-history-select");
+  try {
+    const list = await api("/api/reports");
+    if (!list.length) {
+      select.classList.add("hidden");
+      return [];
+    }
+    select.innerHTML = "";
+    list.forEach((r) => {
+      select.appendChild(new Option(new Date(r.generated_at).toLocaleString(), r.id));
+    });
+    select.value = selectedId || list[0].id;
+    select.classList.remove("hidden");
+    return list;
+  } catch (e) {
+    select.classList.add("hidden");
+    return [];
+  }
+}
+
+async function showReports() {
+  const list = await loadReportHistory(currentReportId);
+  if (!list.length) {
+    document.getElementById("report-empty-state").classList.remove("hidden");
+    document.getElementById("report-content").innerHTML = "";
+  } else {
+    const idToLoad = document.getElementById("report-history-select").value;
+    renderReport(await api(`/api/reports/${encodeURIComponent(idToLoad)}`));
+  }
+  showView("reports");
+}
+
+async function onReportHistoryChange() {
+  const id = document.getElementById("report-history-select").value;
+  renderReport(await api(`/api/reports/${encodeURIComponent(id)}`));
+}
+
+async function generateReport() {
+  const buttons = [document.getElementById("generate-report-btn"), document.getElementById("generate-report-btn-inline")].filter(Boolean);
+  const originalLabels = buttons.map((b) => b.querySelector("span:last-child").textContent);
+  buttons.forEach((b) => {
+    b.disabled = true;
+    b.classList.add("opacity-50", "cursor-not-allowed");
+    b.querySelector("span:last-child").textContent = "ANALYZING…";
+  });
+  try {
+    const report = await api("/api/reports/generate", { method: "POST" });
+    await loadReportHistory(report.id);
+    renderReport(report);
+    showView("reports");
+  } catch (e) {
+    alert(`Couldn't generate report: ${e.message}`);
+  } finally {
+    buttons.forEach((b, i) => {
+      b.disabled = false;
+      b.classList.remove("opacity-50", "cursor-not-allowed");
+      b.querySelector("span:last-child").textContent = originalLabels[i];
+    });
+  }
+}
+
+async function sendReportToLLM() {
+  const btn = document.getElementById("send-to-llm-btn");
+  const statusEl = document.getElementById("send-to-llm-status");
+  btn.disabled = true;
+  statusEl.textContent = "Sending…";
+  try {
+    await api(`/api/reports/${encodeURIComponent(currentReportId)}/send-to-llm`, { method: "POST" });
+    statusEl.textContent = "Done.";
+  } catch (e) {
+    statusEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
   }
 }
 

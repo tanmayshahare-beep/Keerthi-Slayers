@@ -116,6 +116,10 @@
         <span class="material-symbols-outlined">newspaper</span>
         <span class="text-sm">News</span>
       </a>
+      <a class="nav-link flex items-center space-x-3 px-3 py-3 cursor-pointer text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-colors duration-200" data-view="reports" href="#">
+        <span class="material-symbols-outlined">description</span>
+        <span class="text-sm">Reports</span>
+      </a>
       <a class="nav-link flex items-center space-x-3 px-3 py-3 cursor-pointer text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-colors duration-200" data-view="wizard" href="#">
         <span class="material-symbols-outlined">edit_note</span>
         <span class="text-sm">Edit Categories</span>
@@ -138,6 +142,12 @@
       </div>
     </div>
   </aside>
+
+  <!-- Always-visible quick action, regardless of which view is active -->
+  <button class="fixed top-6 right-6 z-40 flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2.5 rounded-lg shadow-lg transition-transform active:scale-95 hover:scale-105" id="generate-report-btn" onclick="generateReport()" title="Run a classical (non-LLM) data analysis and save it as a report">
+    <span class="material-symbols-outlined text-lg">summarize</span>
+    <span class="font-label-caps text-[10px]">GENERATE REPORT</span>
+  </button>
 
   <main class="ml-60 p-6 min-h-screen">
 
@@ -258,6 +268,29 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="news-cards"></div>
+    </section>
+
+    <!-- REPORTS VIEW -->
+    <section data-view="reports">
+      <div class="flex items-center justify-between mb-1 gap-4">
+        <h2 class="text-xl font-bold whitespace-nowrap">Insights Reports</h2>
+        <div class="flex items-center space-x-3">
+          <select class="hidden field-input rounded px-3 py-1.5 text-xs max-w-[220px]" id="report-history-select" onchange="onReportHistoryChange()"></select>
+          <button class="flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2 rounded transition-transform active:scale-95" id="generate-report-btn-inline" onclick="generateReport()">
+            <span class="material-symbols-outlined text-sm">summarize</span>
+            <span class="font-label-caps text-[10px]">GENERATE NEW REPORT</span>
+          </button>
+        </div>
+      </div>
+      <p class="text-sm text-on-surface-variant mb-6">
+        Classical statistics only — Pareto/ABC analysis, a least-squares revenue trend line, day-of-week seasonality, and a Herfindahl-Hirschman concentration index. No LLM is used to produce this.
+      </p>
+
+      <div class="glass-panel rounded-lg p-8 text-center text-sm text-on-surface-variant" id="report-empty-state">
+        No reports yet. Click <strong>GENERATE NEW REPORT</strong> to analyze your current data.
+      </div>
+
+      <div id="report-content"></div>
     </section>
 
     <!-- WIZARD VIEW -->
