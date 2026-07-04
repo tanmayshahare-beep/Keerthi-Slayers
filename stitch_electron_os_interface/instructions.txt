@@ -97,6 +97,28 @@ the new locations show up.
 
 ---
 
+### Step 5 (optional): Chat with a local LLM about a report
+
+The **Reports** tab's **SEND TO LLM** button explains a generated report in
+plain language and opens a chat window for follow-up questions — using a
+small model running entirely on your machine via [Ollama](https://ollama.com),
+not any cloud API.
+
+1. Install Ollama from https://ollama.com if you don't have it.
+2. Pull the model once:
+   ```cmd
+   ollama pull phi3
+   ```
+3. Make sure Ollama is running (the Ollama app running in your system tray
+   is enough, or run `ollama serve` in a terminal).
+4. Generate a report, then click **SEND TO LLM →** at the bottom of it.
+
+Want a different local model? Set `AROS_OLLAMA_MODEL` before running
+`npm start` (e.g. `set AROS_OLLAMA_MODEL=llama3` on Windows), then
+`ollama pull` that model too.
+
+---
+
 ### Troubleshooting
 
 | Symptom | Likely cause |
@@ -106,6 +128,8 @@ the new locations show up.
 | `FileNotFoundError: ...pos_system.db not found` | `pos-system/pos_system.db` doesn't exist yet — run Step 1.3 |
 | Wizard shows 0 products | `pos_system.db` exists but is empty — run `python seed_data.py` from `pos-system/` |
 | Forgot your local password | Delete `aros_backend/aros_app.db` and restart the app — you'll be prompted to create a new account (this does **not** touch your real sales data) |
+| "Couldn't reach Ollama" on SEND TO LLM | Ollama isn't running — start the Ollama app or run `ollama serve` |
+| "Model isn't pulled yet" on SEND TO LLM | Run `ollama pull phi3` (or whatever `AROS_OLLAMA_MODEL` you set) |
 
 ---
 

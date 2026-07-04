@@ -303,6 +303,30 @@
     </section>
 
   </main>
+
+  <!-- LLM CHAT MODAL (local Ollama model - see aros_backend/ollama_client.py) -->
+  <div class="fixed inset-0 z-[60] items-center justify-center p-6" id="chat-modal" style="display: none;">
+    <div class="absolute inset-0 bg-black/60" onclick="closeChatModal()"></div>
+    <div class="relative glass-panel rounded-lg w-full max-w-lg h-[70vh] flex flex-col overflow-hidden border border-outline-variant">
+      <div class="flex items-center justify-between p-4 border-b border-outline-variant">
+        <div class="flex items-center space-x-2">
+          <span class="material-symbols-outlined text-electric-blue">psychology</span>
+          <div>
+            <h3 class="font-bold text-sm">Ask about this report</h3>
+            <p class="text-[10px] text-on-surface-variant font-label-caps">LOCAL LLM · RUNS ENTIRELY ON THIS MACHINE</p>
+          </div>
+        </div>
+        <button class="material-symbols-outlined text-on-surface-variant hover:text-on-surface" onclick="closeChatModal()">close</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4 space-y-3" id="chat-messages"></div>
+      <div class="p-3 border-t border-outline-variant flex items-center space-x-2">
+        <input class="field-input flex-1 rounded px-3 py-2 text-sm" id="chat-input" onkeydown="if(event.key==='Enter') sendChatMessage()" placeholder="Ask a question about this report…" type="text"/>
+        <button class="bg-electric-blue text-deep-obsidian font-bold px-4 py-2.5 rounded transition-transform active:scale-95" id="chat-send-btn" onclick="sendChatMessage()">
+          <span class="material-symbols-outlined text-sm">send</span>
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="app.js"></script>

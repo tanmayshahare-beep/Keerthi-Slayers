@@ -571,8 +571,7 @@ async function refreshNews() {
 // ---------- insights reports ----------
 // Classical (non-LLM) analysis, generated on demand and saved to a file by
 // the backend (aros_backend/reports.py). The "Full Report Text" block is
-// exactly the payload a future LLM integration would receive - see
-// sendReportToLLM(), currently a stub the backend answers with 501.
+// exactly the payload sent to the local LLM - see sendReportToLLM() below.
 
 function renderReportSection(section) {
   const { title, currency, analysis } = section;
@@ -773,14 +772,74 @@ async function sendReportToLLM() {
   const btn = document.getElementById("send-to-llm-btn");
   const statusEl = document.getElementById("send-to-llm-status");
   btn.disabled = true;
-  statusEl.textContent = "Sending…";
+  statusEl.textContent = "Asking the local LLM… (can take a while the first time a model loads)";
   try {
-    await api(`/api/reports/${encodeURIComponent(currentReportId)}/send-to-llm`, { method: "POST" });
-    statusEl.textContent = "Done.";
+    const { explanation } = await api(`/api/reports/${encodeURIComponent(currentReportId)}/send-to-llm`, { method: "POST" });
+    statusEl.textContent = "";
+    document.getElementById("chat-messages").innerHTML = "";
+    appendChatBubble("assistant", explanation);
+    openChatModal();
   } catch (e) {
     statusEl.textContent = e.message;
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ---------- LLM chat modal ----------
+// One conversation per report, held server-side (aros_backend/chat_store.py)
+// so a lightweight local model (via Ollama) can answer follow-ups grounded
+// in that report's data.
+
+function appendChatBubble(role, content) {
+  const container = document.getElementById("chat-messages");
+  const isUser = role === "user";
+  const bubble = document.createElement("div");
+  bubble.className = `flex ${isUser ? "justify-end" : "justify-start"}`;
+  bubble.innerHTML = `<div class="max-w-[85%] rounded-lg px-3 py-2 text-sm ${isUser ? "bg-electric-blue text-deep-obsidian" : "bg-surface-variant/40 text-on-surface"}">${escapeHtml(content).replace(/\n/g, "<br>")}</div>`;
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+  return bubble;
+}
+
+function openChatModal() {
+  // Toggled via inline style rather than a "hidden"/"flex" class pair -
+  // Tailwind utility classes of equal specificity break ties by stylesheet
+  // order, not DOM order, which isn't worth relying on for a show/hide flag.
+  document.getElementById("chat-modal").style.display = "flex";
+  const input = document.getElementById("chat-input");
+  input.value = "";
+  input.focus();
+}
+
+function closeChatModal() {
+  document.getElementById("chat-modal").style.display = "none";
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById("chat-input");
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = "";
+
+  appendChatBubble("user", message);
+  const sendBtn = document.getElementById("chat-send-btn");
+  sendBtn.disabled = true;
+  const thinkingBubble = appendChatBubble("assistant", "…thinking…");
+
+  try {
+    const { reply } = await api(`/api/reports/${encodeURIComponent(currentReportId)}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+    thinkingBubble.remove();
+    appendChatBubble("assistant", reply);
+  } catch (e) {
+    thinkingBubble.remove();
+    appendChatBubble("assistant", `⚠ ${e.message}`);
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
   }
 }
 

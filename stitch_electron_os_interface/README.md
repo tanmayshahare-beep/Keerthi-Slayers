@@ -30,11 +30,20 @@ day-of-week seasonality, Herfindahl-Hirschman concentration — over both data
 sources at once, and saves it as a timestamped JSON file under
 `aros_backend/reports/` (gitignored; see `report_analysis.py` for the math,
 `reports.py` for the file store). Past reports are browsable from the
-**Reports** tab. Each report ends with a "Send to LLM" button that's wired
-up end-to-end but intentionally stubbed server-side (`POST
-/api/reports/{id}/send-to-llm` → 501) — the report's plain-text narrative is
-already exactly what a future LLM call would receive as context, so plugging
-one in later is a matter of filling in that one endpoint.
+**Reports** tab.
+
+Each report ends with a **Send to LLM** button that hands the report's plain
+text narrative to a local model running in [Ollama](https://ollama.com) —
+nothing leaves the machine. A `report_explainer` agent (`agents.py`) explains
+the report in plain, non-technical language, then opens a chat window
+(`chat_store.py` holds the conversation, one per report, server-side) where
+you can ask follow-up questions grounded in that report's data.
+`agents.py` is a registry on purpose — it currently holds one agent, but is
+where additional agents get added later. Default model is `phi3` (small,
+fast on CPU); override with the `AROS_OLLAMA_MODEL` env var. Requires Ollama
+installed and running (`ollama pull phi3` once, then either the Ollama app
+or `ollama serve` in the background) — if it's unreachable, the button shows
+a clear message instead of hanging or crashing.
 
 `DESIGN.md` documents the visual design system the UI follows. `screen.png`
 is a reference mockup of the original concept (superseded by the working app).

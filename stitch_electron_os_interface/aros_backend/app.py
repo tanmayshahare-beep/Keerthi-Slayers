@@ -4,11 +4,14 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import agents
 import app_db
 import auth
 import categories_template
 import central_data
+import chat_store
 import news
+import ollama_client
 import pos_data
 import reports
 import segregation
@@ -26,6 +29,10 @@ class Credentials(BaseModel):
 
 class CategoryAssignments(BaseModel):
     assignments: dict[str, str]  # barcode -> category_name
+
+
+class ChatMessage(BaseModel):
+    message: str
 
 
 @app.get("/health")
@@ -180,16 +187,51 @@ def reports_get(report_id: str, _user: str = Depends(auth.require_session)):
     return report
 
 
+@app.get("/api/llm/status")
+def llm_status(_user: str = Depends(auth.require_session)):
+    return {"available": ollama_client.is_available(), "model": ollama_client.DEFAULT_MODEL}
+
+
 @app.post("/api/reports/{report_id}/send-to-llm")
 def reports_send_to_llm(report_id: str, _user: str = Depends(auth.require_session)):
-    """Extension point: forwarding a generated report's narrative to an LLM
-    for deeper/qualitative analysis is intentionally not implemented yet
-    (the whole point of this report is a cheap, classical-only baseline).
-    When it is: load the report via reports.get_report(report_id), send its
-    "narrative" field as context, and return the model's response here."""
-    if reports.get_report(report_id) is None:
+    """Kicks off a chat conversation with the local LLM (via Ollama - see
+    ollama_client.py) about this report: the "report_explainer" agent
+    (agents.py) explains it in plain language, which seeds the conversation
+    that /api/reports/{report_id}/chat continues."""
+    report = reports.get_report(report_id)
+    if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
-    raise HTTPException(status_code=501, detail="LLM analysis isn't enabled yet.")
+
+    messages = agents.build_explainer_messages(report["narrative"])
+    try:
+        reply = ollama_client.chat(messages, num_predict=600)
+    except ollama_client.OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    messages.append({"role": "assistant", "content": reply})
+    chat_store.start_conversation(report_id, messages)
+    return {"explanation": reply}
+
+
+@app.get("/api/reports/{report_id}/chat")
+def reports_chat_history(report_id: str, _user: str = Depends(auth.require_session)):
+    history = chat_store.get_conversation(report_id) or []
+    return {"messages": [m for m in history if m["role"] != "system"]}
+
+
+@app.post("/api/reports/{report_id}/chat")
+def reports_chat(report_id: str, body: ChatMessage, _user: str = Depends(auth.require_session)):
+    if chat_store.get_conversation(report_id) is None:
+        raise HTTPException(status_code=409, detail="Start with Send to LLM first.")
+
+    chat_store.append_message(report_id, "user", body.message)
+    try:
+        reply = ollama_client.chat(chat_store.get_conversation(report_id))
+    except ollama_client.OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    chat_store.append_message(report_id, "assistant", reply)
+    return {"reply": reply}
 
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
