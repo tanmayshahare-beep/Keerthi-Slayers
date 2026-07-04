@@ -1,7 +1,11 @@
 import sqlite3
 import json
 import datetime
+import sys
 from flask import Flask, request, jsonify
+
+if sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 app = Flask(__name__)
 

@@ -116,7 +116,7 @@
 
 - Admin access to inventory management (**_Default Admin Password is : admin123_**)
 - Local database backup capability
-- No network dependencies to Prevent Hacking or Similar
+- The core POS app itself has no network dependencies (fully offline). An optional HQ sync layer (see the repo root `README.md`) can push sales to a central server over the local network — only enable it if you need multi-store reporting.
   
 ---
 

@@ -4,14 +4,13 @@ Connects the Store POS (sender) to the central HQ receiver so sales made offline
 get pushed to a shared database once a network path exists.
 
 ```
-Laptop B (Store POS)  --HTTP POST-->  Laptop A (HQ)
-store_sync_agent.py                   HQ_Retail_OS/hq_receiver.py
-pos_system.db                         HQ_Retail_OS/central_hq.db
+Laptop B (Store POS)          --HTTP POST-->  Laptop A (HQ)
+pos-system/store_sync_agent.py                HQ_Retail_OS/hq_receiver.py
+pos-system/pos_system.db                      HQ_Retail_OS/central_hq.db
 ```
 
 Both scripts live in this same repo — copy the whole repo to each laptop (or
-just the relevant piece: repo root + `pos-system/` for the store, `HQ_Retail_OS/`
-for HQ).
+just the relevant piece: `pos-system/` for the store, `HQ_Retail_OS/` for HQ).
 
 Prerequisites: Python 3.7+, `pip install flask` (HQ machine), `pip install requests`
 (Store machine). Both machines must be on the same network (same Wi-Fi/LAN).
@@ -43,16 +42,17 @@ Note the **IPv4 Address** under your active Wi-Fi/Ethernet adapter (e.g. `192.16
 
 ## 2. Point the sender at the receiver (Laptop B / Store)
 
-Edit `store_sync_agent.py` (repo root), line 11:
+Edit `pos-system/store_sync_agent.py`, line 15:
 
 ```python
 HQ_API_URL = "http://192.168.1.100:5000/ingest"  # <- Laptop A's IPv4 address
 ```
 
-Run it from the repo root (it opens `pos_system.db` via a relative path, so the
-working directory must be the repo root, not `pos-system/`):
+Run it from inside `pos-system/` (it opens `pos_system.db` via a relative path, so the
+working directory must be `pos-system/` — the same folder as `main.py` — not the repo root):
 
 ```cmd
+cd pos-system
 python store_sync_agent.py
 ```
 
@@ -73,7 +73,8 @@ Expect `{'status': 'HQ is alive'}`. A `ConnectionError` here means a network/
 firewall/IP problem — fix this before touching the sync agent.
 
 **B. End-to-end test** — on Laptop B, make one sale in the POS app (`python
-main.py` inside `pos-system/`), then run the sync agent once. Confirm you see:
+main.py` inside `pos-system/`), then run the sync agent once from that same
+folder. Confirm you see:
 
 ```
 📤 Sending 1 sales to HQ...
@@ -93,7 +94,7 @@ cd "HQ_Retail_OS"
 python -c "import sqlite3; conn=sqlite3.connect('central_hq.db'); cursor=conn.cursor(); cursor.execute('SELECT store_id, sale_id, total_amount, timestamp FROM central_sales'); print(cursor.fetchall()); conn.close()"
 ```
 
-**D. Verify the store side marked it synced** — on Laptop B, from the repo root:
+**D. Verify the store side marked it synced** — on Laptop B, from inside `pos-system/`:
 
 ```cmd
 python -c "import sqlite3; conn=sqlite3.connect('pos_system.db'); cursor=conn.cursor(); cursor.execute('SELECT id, synced_to_cloud FROM sales ORDER BY id DESC LIMIT 5'); print(cursor.fetchall()); conn.close()"
@@ -107,5 +108,5 @@ The most recent sale should show `synced_to_cloud = 1`.
 | --- | --- |
 | `⚠️ Cannot reach HQ` on Laptop B | HQ isn't running, wrong IP in `HQ_API_URL`, or Windows Firewall is blocking port 5000 on Laptop A |
 | Health check hangs then times out | Machines aren't on the same network/subnet |
-| Sale never shows `synced_to_cloud = 1` | Sync agent run from the wrong directory — it must run from the repo root (not `pos-system/`) so `pos_system.db` resolves to the real database |
+| Sale never shows `synced_to_cloud = 1` | Sync agent run from the wrong directory — it must run from `pos-system/` (the same folder as `main.py` and `pos_system.db`), not the repo root, so `pos_system.db` resolves to the real database |
 | `Duplicate sale ignored` on every run | Expected if a sale already synced — the `UNIQUE(store_id, sale_id)` constraint prevents double-inserts on retries |

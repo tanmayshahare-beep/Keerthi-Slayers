@@ -2,13 +2,17 @@ import sqlite3
 import requests
 import time
 import os
+import sys
+
+if sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # ==========================================
 # !!! IMPORTANT: CHANGE THIS IP ADDRESS !!!
 # ==========================================
 # Replace 192.168.1.100 with the ACTUAL IP address of Laptop A (HQ).
 # To find Laptop A's IP, run 'ipconfig' on Laptop A and look for IPv4.
-HQ_API_URL = "http://10.154.211.3/ingest"  # <--- CHANGE THIS
+HQ_API_URL = "http://192.168.1.100:5000/ingest"  # <--- CHANGE THIS
 
 # Give this store a unique name (use different names if you have multiple stores)
 STORE_ID = "STORE_001"
