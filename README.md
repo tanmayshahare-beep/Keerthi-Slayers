@@ -1,99 +1,62 @@
-# AI-Assisted Retail Operating System (AROS)
+# Open-Source Point of Sale System
 
-## 1. Overview
-**AROS** is a scalable, multi-agent AI operating system designed to sit **on top of** existing retail data warehouses. It ingests raw sales data, segregates it by business vertical (Fashion, Grocery, Electronics), deploys specialized LLM agents to diagnose sales performance, cross-references live local news/weather, and formulates a consensus-driven business strategy.
+A real, offline-first POS system, an optional multi-store sync layer, and a
+desktop analytics app that reads the actual sales data — no mocked numbers
+anywhere in this repo.
 
-The final output is a structured JSON strategy that can be written back into the retailer's BI dashboards (e.g., PowerBI, Tableau) or executed via automated API calls to ERP systems.
+## What's here
 
----
-
-## 2. Architecture Philosophy
-
-To ensure **scalability** and **cost-control**, we strictly separate:
-
-- **Classical Computing (Python/Pandas):** Handles all heavy mathematical aggregation (Top/Bottom SKUs, revenue sums). LLMs are notoriously bad at math; we never send raw row-level data to them.
-- **LLM Reasoning (Agents):** Handles *why* something is happening, *what* to do about it, and *mediation* between conflicting departmental strategies.
-- **RAG (Retrieval-Augmented Generation):** Ensures the News Agent uses *actual* scraped text, preventing hallucinated news.
-
----
-
-## 3. Detailed Workflow (Step-by-Step)
-
-| Phase | Component | Technology | Description |
-| :--- | :--- | :--- | :--- |
-| **1** | **Data Ingest & Segregation** | Python, Pandas, SQLAlchemy | Connects to the retailer's Data Warehouse. Aggregates sales by `location_id` and `sku`. Filters to the Top 50 and Bottom 50 SKUs per business type to fit within LLM context windows. |
-| **2** | **Vertical Specialists** | LangGraph + GPT-4o | 3 parallel LLM agents receive their specific aggregated data. They output natural language insights. |
-| **3** | **Location Context (RAG)** | Requests, Newspaper3k, ChromaDB | Fetches live news/weather for each store location, scrapes relevant articles, and summarizes them into actionable insights. |
-| **4** | **User Strategy Input** | FastAPI | User selects a goal such as `Maximize Profit`, `Clear Inventory`, or `Increase Market Share`. |
-| **5** | **Parallel Strategy Agents** | LangGraph | Finance, Supply Chain, Marketing, and HR agents execute concurrently. |
-| **6** | **Mediator (CEO Agent)** | GPT-4o + Structured JSON | Resolves conflicting recommendations into one coherent strategy. |
-| **7** | **Write-Back** | SQLAlchemy / REST API | Final strategy JSON is stored back in the warehouse. |
-
----
-
-## 4. Tech Stack for Scalability
-
-| Layer | Technology | Justification |
-| :--- | :--- | :--- |
-| Orchestration | LangGraph | Multi-agent workflow orchestration |
-| LLM | OpenAI GPT-4o / Azure OpenAI | Large context and structured JSON output |
-| Data Processing | Pandas + Dask | Efficient aggregation and scaling |
-| Vector DB | ChromaDB | News embedding cache |
-| Backend | FastAPI + Uvicorn | Async API |
-| Background Tasks | Celery + Redis | Batch processing |
-| Monitoring | LangSmith | LLM observability |
-| Deployment | Docker + Kubernetes | Horizontal scaling |
-
----
-
-## 5. Integration with Existing Data Architecture
-
-1. Read-only connection to Snowflake, Redshift, BigQuery, PostgreSQL, etc.
-2. Trigger via webhooks or scheduled jobs.
-3. Write final strategies into `aros_strategy_outputs`.
-4. Existing BI dashboards query the new table.
-
----
-
-## 6. Scalability Considerations
-
-| Challenge | Solution |
+| Folder | What it is |
 | :--- | :--- |
-| Token overflow | Send only aggregated KPIs (Top/Bottom 50 SKUs) |
-| Latency | Parallel agent execution |
-| News hallucination | Strict RAG pipeline |
-| Conflicting strategies | CEO mediator + human override |
-| Cost | Semantic caching |
+| [`pos-system/`](pos-system/README.md) | **Hegxib POS** — the actual point-of-sale app. Offline, SQLite-backed, phone-as-barcode-scanner, inventory management. This is what a cashier runs. |
+| [`HQ_Retail_OS/`](SYNC_SETUP.md) | Optional receiver for a central "HQ" database, so multiple store laptops can push their sales to one place over the local network. |
+| [`stitch_electron_os_interface/`](stitch_electron_os_interface/README.md) | **AROS** — a separate Electron desktop app that reads the POS/HQ databases (read-only) and turns them into an insights dashboard: Pareto/trend analysis, live retail news, multi-location comparison, and a local-LLM chat (via [Ollama](https://ollama.com)) that explains a generated report and answers follow-up questions. |
 
----
+Each folder's own README has the real setup/run instructions for that piece —
+this file is just the map.
 
-## 7. Quick Start
+## Quick start
 
+**Just want to ring up sales?**
 ```bash
-git clone https://github.com/your-repo/aros.git
-cd aros
+cd pos-system
+python main.py
+```
+See [`pos-system/README.md`](pos-system/README.md) — default admin password `admin123`.
 
-export OPENAI_API_KEY="sk-..."
-export DATA_WAREHOUSE_DSN="postgresql://user:pass@localhost:5432/retail_db"
-export NEWS_API_KEY="..."
+**Want the analytics dashboard?**
+```bash
+cd stitch_electron_os_interface/electron
+npm install
+npm start
+```
+See [`stitch_electron_os_interface/README.md`](stitch_electron_os_interface/README.md)
+and `instructions.txt` in that folder for the full walkthrough (multi-location
+demo data, News tab, and the local-LLM report chat are all optional add-ons
+documented there).
 
-poetry install
-poetry run python main.py --store_ids 101,102,103 --goal "Maximize Profit"
+**Syncing multiple stores to one HQ database?** See [`SYNC_SETUP.md`](SYNC_SETUP.md).
+
+## How the pieces fit together
+
+```
+pos-system/pos_system.db  ──┐
+                             ├─→ stitch_electron_os_interface (AROS dashboard, read-only)
+HQ_Retail_OS/central_hq.db ─┘
+       ▲
+       │ (optional, over LAN)
+pos-system/store_sync_agent.py  →  HQ_Retail_OS/hq_receiver.py
 ```
 
----
-
-## 8. Future Roadmap
-
-- Predictive time-series forecasting.
-- Automated ERP, Shopify, and advertising integrations.
-
----
-
-## Contributing
-
-Please raise issues for agent prompts or schema changes. All LLM outputs should use Pydantic models.
+The POS app is the source of truth and never depends on AROS or the HQ
+sync layer to function — both of those are optional, additive, and strictly
+read from (or receive pushes from) the POS side, never the reverse.
 
 ## License
 
-MIT
+[`pos-system/LICENSE`](pos-system/LICENSE) — GNU GPLv3.
+
+## Contributing
+
+Pull requests and forks welcome — see [`pos-system/README.md`](pos-system/README.md#contributing)
+for contact details.
