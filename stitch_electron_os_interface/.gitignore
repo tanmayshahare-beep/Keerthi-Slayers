@@ -4,3 +4,4 @@ __pycache__/
 *.db
 node_modules/
 aros_backend/reports/
+aros_backend/plans/

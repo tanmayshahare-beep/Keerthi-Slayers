@@ -120,6 +120,10 @@
         <span class="material-symbols-outlined">description</span>
         <span class="text-sm">Reports</span>
       </a>
+      <a class="nav-link flex items-center space-x-3 px-3 py-3 cursor-pointer text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-colors duration-200" data-view="plan" href="#">
+        <span class="material-symbols-outlined">flag</span>
+        <span class="text-sm">Plan</span>
+      </a>
       <a class="nav-link flex items-center space-x-3 px-3 py-3 cursor-pointer text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-colors duration-200" data-view="wizard" href="#">
         <span class="material-symbols-outlined">edit_note</span>
         <span class="text-sm">Edit Categories</span>
@@ -292,6 +296,46 @@
       </div>
 
       <div id="report-content"></div>
+    </section>
+
+    <!-- PLAN VIEW -->
+    <section data-view="plan">
+      <div class="flex items-center justify-between mb-1 gap-4">
+        <h2 class="text-xl font-bold whitespace-nowrap">Business Plan</h2>
+        <div class="flex items-center space-x-3">
+          <select class="hidden field-input rounded px-3 py-1.5 text-xs max-w-[260px]" id="plan-history-select" onchange="onPlanHistoryChange()"></select>
+          <button class="flex items-center space-x-2 border border-outline-variant hover:border-electric-blue text-on-surface-variant hover:text-electric-blue font-bold px-4 py-2 rounded transition-colors" onclick="startNewPlan()">
+            <span class="material-symbols-outlined text-sm">add</span>
+            <span class="font-label-caps text-[10px]">NEW PLAN</span>
+          </button>
+        </div>
+      </div>
+      <p class="text-sm text-on-surface-variant mb-6">
+        A guided conversation sets your goal, timeframe, and budget, then a sequential 6-agent pipeline (Strategy → Marketing → Lead Gen → Sales → Analytics → Customer Success) builds a plan around it — each agent sees every earlier one's output.
+      </p>
+
+      <!-- Guided intake -->
+      <div id="plan-intake">
+        <div class="mb-4 max-w-xs">
+          <label class="font-label-caps text-[10px] text-on-surface-variant block mb-1">LOCATION</label>
+          <select class="field-input rounded px-3 py-1.5 text-xs w-full" id="plan-location-select" onchange="onPlanLocationChange()"></select>
+        </div>
+        <div class="space-y-3 mb-4" id="plan-intake-messages"></div>
+        <div id="plan-intake-controls"></div>
+      </div>
+
+      <!-- Pipeline (shown once intake is finalized) -->
+      <div class="hidden" id="plan-pipeline">
+        <div class="glass-panel rounded-lg p-4 mb-6" id="plan-summary-card"></div>
+        <div class="glass-panel rounded-lg p-4 mb-6 space-y-2" id="plan-engine-progress"></div>
+        <div id="plan-engine-sections"></div>
+        <div class="hidden glass-panel rounded-lg p-6 mt-2 text-center" id="plan-chat-entry">
+          <button class="flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2.5 rounded transition-transform active:scale-95 mx-auto" onclick="openPlanChat()">
+            <span class="material-symbols-outlined text-sm">forum</span>
+            <span class="font-label-caps text-[10px]">ASK ABOUT THIS PLAN →</span>
+          </button>
+        </div>
+      </div>
     </section>
 
     <!-- WIZARD VIEW -->

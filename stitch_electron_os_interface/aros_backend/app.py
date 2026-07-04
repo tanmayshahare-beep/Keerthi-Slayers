@@ -12,6 +12,7 @@ import central_data
 import chat_store
 import news
 import ollama_client
+import plans
 import pos_data
 import reports
 import segregation
@@ -33,6 +34,13 @@ class CategoryAssignments(BaseModel):
 
 class ChatMessage(BaseModel):
     message: str
+
+
+class PlanCreate(BaseModel):
+    location: str = "main"
+    goal: str
+    timeframe: str
+    budget: float
 
 
 @app.get("/health")
@@ -260,6 +268,66 @@ def reports_chat(report_id: str, body: ChatMessage, _user: str = Depends(auth.re
         raise HTTPException(status_code=503, detail=str(e))
 
     chat_store.append_message(report_id, "assistant", reply)
+    return {"reply": reply}
+
+
+@app.post("/api/plans")
+def plans_create(body: PlanCreate, _user: str = Depends(auth.require_session)):
+    return plans.create_plan(body.location, body.goal, body.timeframe, body.budget)
+
+
+@app.get("/api/plans")
+def plans_list(_user: str = Depends(auth.require_session)):
+    return plans.list_plans()
+
+
+@app.get("/api/plans/{plan_id}")
+def plans_get(plan_id: str, _user: str = Depends(auth.require_session)):
+    plan = plans.get_plan(plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return plan
+
+
+@app.post("/api/plans/{plan_id}/run/{engine_name}")
+def plans_run_engine(plan_id: str, engine_name: str, _user: str = Depends(auth.require_session)):
+    """Runs exactly one step of the sequential engine pipeline (plans.py).
+    The frontend calls this once per engine, in order, so it can show
+    progress and render each section as it completes rather than waiting
+    for all six local-LLM calls to finish silently."""
+    try:
+        return plans.run_engine(plan_id, engine_name)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ollama_client.OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/plans/{plan_id}/chat")
+def plans_chat_history(plan_id: str, _user: str = Depends(auth.require_session)):
+    history = chat_store.get_conversation(plan_id) or []
+    return {"messages": [m for m in history if m["role"] != "system"]}
+
+
+@app.post("/api/plans/{plan_id}/chat")
+def plans_chat(plan_id: str, body: ChatMessage, _user: str = Depends(auth.require_session)):
+    if chat_store.get_conversation(plan_id) is None:
+        plan = plans.get_plan(plan_id)
+        if plan is None:
+            raise HTTPException(status_code=404, detail="Plan not found")
+        chat_store.start_conversation(plan_id, agents.build_plan_chat_seed_messages(plan))
+
+    chat_store.append_message(plan_id, "user", body.message)
+    try:
+        reply = ollama_client.chat(chat_store.get_conversation(plan_id))
+    except ollama_client.OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    chat_store.append_message(plan_id, "assistant", reply)
     return {"reply": reply}
 
 

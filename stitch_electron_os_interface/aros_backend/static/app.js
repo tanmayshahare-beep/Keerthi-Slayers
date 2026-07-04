@@ -7,6 +7,11 @@ let currentLocation = "main"; // "main" | "all" | a Tamil Nadu store_id
 let currentNewsLocation = "main";
 let currentReportLocation = "main";
 let currentReportId = null;
+let currentChatBase = null; // "/api/reports/<id>" or "/api/plans/<id>" - see the LLM chat modal section
+let currentPlanId = null;
+let planStarted = false;
+let planIntakeStep = 0;
+let planAnswers = { location: "main", goal: null, timeframe: null, budget: null };
 
 // ---------- theme tokens ----------
 // Applied via style.setProperty rather than a stylesheet rule - a bare
@@ -82,11 +87,12 @@ function showView(view) {
     el.classList.toggle("border-electric-blue", active);
     el.classList.toggle("text-on-surface-variant", !active);
   });
-  // The Reports tab has its own inline "GENERATE NEW REPORT" button in the
-  // same corner - the fixed one would otherwise sit on top of it and
-  // intercept clicks, so hide the redundant fixed one there.
+  // The Reports and Plan tabs both have their own right-aligned header
+  // controls (history dropdowns, buttons) in the same corner - the fixed
+  // one would otherwise sit on top of them and intercept clicks, so hide
+  // the redundant fixed one on those tabs.
   const fixedGenerateBtn = document.getElementById("generate-report-btn");
-  if (fixedGenerateBtn) fixedGenerateBtn.style.display = view === "reports" ? "none" : "flex";
+  if (fixedGenerateBtn) fixedGenerateBtn.style.display = view === "reports" || view === "plan" ? "none" : "flex";
 }
 
 document.querySelectorAll(".nav-link").forEach((el) => {
@@ -98,6 +104,8 @@ document.querySelectorAll(".nav-link").forEach((el) => {
       showNews();
     } else if (el.dataset.view === "reports") {
       showReports();
+    } else if (el.dataset.view === "plan") {
+      showPlan();
     } else {
       showView(el.dataset.view);
     }
@@ -795,6 +803,7 @@ async function sendReportToLLM() {
   try {
     const { explanation } = await api(`/api/reports/${encodeURIComponent(currentReportId)}/send-to-llm`, { method: "POST" });
     statusEl.textContent = "";
+    currentChatBase = `/api/reports/${encodeURIComponent(currentReportId)}`;
     document.getElementById("chat-messages").innerHTML = "";
     appendChatBubble("assistant", explanation);
     openChatModal();
@@ -813,6 +822,7 @@ async function correlateWithNews() {
   try {
     const { explanation } = await api(`/api/reports/${encodeURIComponent(currentReportId)}/correlate-news`, { method: "POST" });
     statusEl.textContent = "";
+    currentChatBase = `/api/reports/${encodeURIComponent(currentReportId)}`;
     document.getElementById("chat-messages").innerHTML = "";
     appendChatBubble("assistant", explanation);
     openChatModal();
@@ -824,9 +834,10 @@ async function correlateWithNews() {
 }
 
 // ---------- LLM chat modal ----------
-// One conversation per report, held server-side (aros_backend/chat_store.py)
-// so a lightweight local model (via Ollama) can answer follow-ups grounded
-// in that report's data.
+// Generic - used by both per-report chat (chat_store.py, keyed by report_id)
+// and per-plan chat (keyed by plan_id). currentChatBase holds whichever
+// "/api/reports/<id>" or "/api/plans/<id>" is currently active; sendChatMessage()
+// just POSTs to `${currentChatBase}/chat` and doesn't need to know which.
 
 function appendChatBubble(role, content) {
   const container = document.getElementById("chat-messages");
@@ -865,7 +876,7 @@ async function sendChatMessage() {
   const thinkingBubble = appendChatBubble("assistant", "…thinking…");
 
   try {
-    const { reply } = await api(`/api/reports/${encodeURIComponent(currentReportId)}/chat`, {
+    const { reply } = await api(`${currentChatBase}/chat`, {
       method: "POST",
       body: JSON.stringify({ message }),
     });
@@ -878,6 +889,373 @@ async function sendChatMessage() {
     sendBtn.disabled = false;
     input.focus();
   }
+}
+
+// ---------- business plan (guided intake -> 6-engine pipeline) ----------
+// See aros_backend/plans.py + agents.py. The intake below asks its questions
+// as chat bubbles, but answers come from structured controls (buttons/number
+// input), not from parsing free text - reliable data in, still conversational.
+
+const PLAN_STEPS = [
+  {
+    key: "goal",
+    question: "What's your main goal right now?",
+    options: [
+      "Increase overall sales",
+      "Rebalance product mix (focus on best/worst sellers)",
+      "Expand to a new location",
+    ],
+    customPlaceholder: "Describe your goal…",
+  },
+  {
+    key: "timeframe",
+    question: "What timeframe are you thinking?",
+    options: ["1 month", "3 months", "6 months", "1 year"],
+    customPlaceholder: "e.g. 45 days, 2 years…",
+  },
+  {
+    key: "budget",
+    question: "What's your budget for this?",
+    isNumber: true,
+  },
+];
+
+const ENGINE_STEPS = [
+  { key: "strategy_engine", label: "Strategy Engine", icon: "insights" },
+  { key: "marketing_engine", label: "Marketing Engine", icon: "campaign" },
+  { key: "leadgen_engine", label: "Lead Gen Engine", icon: "person_add" },
+  { key: "sales_engine", label: "Sale Engine", icon: "point_of_sale" },
+  { key: "analytics_engine", label: "Analytics Engine", icon: "monitoring" },
+  { key: "customer_success_engine", label: "Customer Success Engine", icon: "support_agent" },
+];
+
+function planBubble(text, isUser) {
+  const container = document.getElementById("plan-intake-messages");
+  const div = document.createElement("div");
+  div.className = `flex ${isUser ? "justify-end" : "justify-start"}`;
+  div.innerHTML = `<div class="max-w-[85%] rounded-lg px-3 py-2 text-sm ${isUser ? "bg-electric-blue text-deep-obsidian" : "bg-surface-variant/40 text-on-surface"}">${escapeHtml(text)}</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function showPlan() {
+  await populateLocationOptions(document.getElementById("plan-location-select"), planAnswers.location);
+  await loadPlanHistory(currentPlanId);
+  if (!planStarted) startNewPlan();
+  showView("plan");
+}
+
+function onPlanLocationChange() {
+  planAnswers.location = document.getElementById("plan-location-select").value;
+}
+
+function startNewPlan() {
+  planStarted = true;
+  currentPlanId = null;
+  planIntakeStep = 0;
+  planAnswers = { location: document.getElementById("plan-location-select").value, goal: null, timeframe: null, budget: null };
+  document.getElementById("plan-history-select").value = "";
+  document.getElementById("plan-intake-messages").innerHTML = "";
+  document.getElementById("plan-intake-controls").innerHTML = "";
+  document.getElementById("plan-intake").classList.remove("hidden");
+  document.getElementById("plan-pipeline").classList.add("hidden");
+  askCurrentPlanStep();
+}
+
+function askCurrentPlanStep() {
+  if (planIntakeStep >= PLAN_STEPS.length) {
+    finalizePlanIntake();
+    return;
+  }
+  const step = PLAN_STEPS[planIntakeStep];
+  planBubble(step.question, false);
+  renderPlanStepControls(step);
+}
+
+function renderPlanStepControls(step) {
+  const controls = document.getElementById("plan-intake-controls");
+  controls.innerHTML = "";
+
+  if (step.isNumber) {
+    const currency = planAnswers.location === "main" ? "$" : "₹";
+    const row = document.createElement("div");
+    row.className = "flex items-center gap-2";
+    row.innerHTML = `
+      <span class="text-lg font-bold">${currency}</span>
+      <input class="field-input rounded px-3 py-2 text-sm w-40" id="plan-number-input" min="0" step="1" type="number" placeholder="Amount">
+      <button class="bg-electric-blue text-deep-obsidian font-bold px-4 py-2 rounded transition-transform active:scale-95" id="plan-number-submit">OK</button>
+    `;
+    controls.appendChild(row);
+    const submit = () => {
+      const value = parseFloat(document.getElementById("plan-number-input").value);
+      if (isNaN(value) || value < 0) return;
+      submitPlanStepValue(value, `${currency}${value.toLocaleString()}`);
+    };
+    document.getElementById("plan-number-submit").addEventListener("click", submit);
+    document.getElementById("plan-number-input").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+    document.getElementById("plan-number-input").focus();
+    return;
+  }
+
+  const optionsRow = document.createElement("div");
+  optionsRow.className = "flex flex-wrap gap-2";
+  step.options.forEach((opt) => {
+    const btn = document.createElement("button");
+    btn.className = "border border-outline-variant hover:border-electric-blue hover:text-electric-blue rounded px-3 py-2 text-sm transition-colors";
+    btn.textContent = opt;
+    btn.addEventListener("click", () => submitPlanStepValue(opt, opt));
+    optionsRow.appendChild(btn);
+  });
+  const customBtn = document.createElement("button");
+  customBtn.className = "border border-outline-variant hover:border-electric-blue hover:text-electric-blue rounded px-3 py-2 text-sm transition-colors";
+  customBtn.textContent = "Something else…";
+  optionsRow.appendChild(customBtn);
+  controls.appendChild(optionsRow);
+
+  const customRow = document.createElement("div");
+  customRow.className = "hidden mt-2 flex gap-2";
+  customRow.id = "plan-custom-row";
+  customRow.innerHTML = `
+    <input class="field-input rounded px-3 py-2 text-sm flex-1" id="plan-custom-input" placeholder="${escapeHtml(step.customPlaceholder || "")}" type="text">
+    <button class="bg-electric-blue text-deep-obsidian font-bold px-4 py-2 rounded transition-transform active:scale-95" id="plan-custom-submit">OK</button>
+  `;
+  controls.appendChild(customRow);
+
+  customBtn.addEventListener("click", () => {
+    customRow.classList.remove("hidden");
+    document.getElementById("plan-custom-input").focus();
+  });
+  const submitCustom = () => {
+    const val = document.getElementById("plan-custom-input").value.trim();
+    if (val) submitPlanStepValue(val, val);
+  };
+  document.getElementById("plan-custom-submit").addEventListener("click", submitCustom);
+  document.getElementById("plan-custom-input").addEventListener("keydown", (e) => { if (e.key === "Enter") submitCustom(); });
+}
+
+function submitPlanStepValue(value, displayText) {
+  const step = PLAN_STEPS[planIntakeStep];
+  planAnswers[step.key] = value;
+  planBubble(displayText, true);
+  document.getElementById("plan-intake-controls").innerHTML = "";
+  planIntakeStep++;
+  askCurrentPlanStep();
+}
+
+async function finalizePlanIntake() {
+  planBubble("Great — creating your plan now…", false);
+  try {
+    const plan = await api("/api/plans", {
+      method: "POST",
+      body: JSON.stringify(planAnswers),
+    });
+    currentPlanId = plan.id;
+    await loadPlanHistory(plan.id);
+    showPlanPipeline(plan);
+    await runEnginePipeline(plan.id, ENGINE_STEPS);
+  } catch (e) {
+    planBubble(`⚠ Couldn't create the plan: ${e.message}`, false);
+  }
+}
+
+function showPlanPipeline(plan) {
+  document.getElementById("plan-intake").classList.add("hidden");
+  document.getElementById("plan-pipeline").classList.remove("hidden");
+
+  document.getElementById("plan-summary-card").innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div><span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">GOAL</span><span class="text-sm font-bold">${escapeHtml(plan.goal)}</span></div>
+      <div><span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">TIMEFRAME</span><span class="text-sm font-bold">${escapeHtml(plan.timeframe)}</span></div>
+      <div><span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">BUDGET</span><span class="text-sm font-bold">${plan.currency}${Number(plan.budget).toLocaleString()}</span></div>
+      <div><span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">LOCATION</span><span class="text-sm font-bold text-electric-blue">${escapeHtml(plan.location_label)}</span></div>
+    </div>
+  `;
+
+  document.getElementById("plan-engine-progress").innerHTML = ENGINE_STEPS
+    .map(
+      (eng) => `
+      <div class="flex items-center space-x-3 text-sm" id="progress-row-${eng.key}">
+        <span class="material-symbols-outlined text-on-surface-variant" id="progress-icon-${eng.key}">radio_button_unchecked</span>
+        <span class="text-on-surface-variant" id="progress-label-${eng.key}">${escapeHtml(eng.label)}</span>
+      </div>`
+    )
+    .join("");
+  document.getElementById("plan-engine-sections").innerHTML = "";
+  document.getElementById("plan-chat-entry").classList.add("hidden");
+}
+
+function setEngineProgress(key, status) {
+  const icon = document.getElementById(`progress-icon-${key}`);
+  const label = document.getElementById(`progress-label-${key}`);
+  if (!icon) return;
+  icon.classList.remove("animate-spin", "text-electric-blue", "text-data-positive", "text-data-negative", "text-on-surface-variant");
+  if (status === "running") {
+    icon.textContent = "sync";
+    icon.classList.add("text-electric-blue", "animate-spin");
+    label.classList.remove("text-on-surface-variant");
+  } else if (status === "done") {
+    icon.textContent = "check_circle";
+    icon.classList.add("text-data-positive");
+  } else if (status === "failed") {
+    icon.textContent = "error";
+    icon.classList.add("text-data-negative");
+  } else {
+    icon.textContent = "radio_button_unchecked";
+    icon.classList.add("text-on-surface-variant");
+  }
+}
+
+function renderPlanRealData(realData) {
+  if (realData.type === "analytics") {
+    const section = realData.section;
+    if (!section) {
+      return `<div class="text-xs text-data-negative mb-3">No sales data available for this location.</div>`;
+    }
+    const rows = section.analysis.pareto.by_category
+      .map(
+        (r) => `<tr class="border-t border-outline-variant/50">
+          <td class="px-3 py-1.5">${escapeHtml(r.name)}</td>
+          <td class="px-3 py-1.5 text-right">${section.currency}${r.revenue.toFixed(2)}</td>
+          <td class="px-3 py-1.5 text-right">${r.cumulative_pct}%</td>
+        </tr>`
+      )
+      .join("");
+    return `
+      <div class="bg-surface-variant/20 rounded p-4 mb-4">
+        <p class="font-label-caps text-[10px] text-electric-blue mb-2">REAL DATA (not AI-generated)</p>
+        <table class="w-full text-left font-data-code text-xs">
+          <thead class="text-on-surface-variant uppercase text-[10px]"><tr><th class="px-3 py-1">Category</th><th class="px-3 py-1 text-right">Revenue</th><th class="px-3 py-1 text-right">Cum. %</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (realData.type === "customer_activity") {
+    if (!realData.available) {
+      return `<div class="bg-surface-variant/20 rounded p-4 mb-4 text-xs text-on-surface-variant"><strong class="text-on-surface">Real data:</strong> ${escapeHtml(realData.reason)}</div>`;
+    }
+    const warning = realData.has_named_customers
+      ? ""
+      : `<p class="text-xs text-data-negative mb-2">⚠ Every transaction below is logged under a generic "Guest" customer — there's no loyalty/customer-ID system in place yet.</p>`;
+    const rows = realData.recent_transactions
+      .slice(0, 8)
+      .map(
+        (t) => `<tr class="border-t border-outline-variant/50">
+          <td class="px-3 py-1.5">${new Date(t.timestamp).toLocaleString()}</td>
+          <td class="px-3 py-1.5">${escapeHtml(t.customer_name)}</td>
+          <td class="px-3 py-1.5 text-right">${t.item_count}</td>
+          <td class="px-3 py-1.5 text-right">$${t.total_amount.toFixed(2)}</td>
+        </tr>`
+      )
+      .join("");
+    return `
+      <div class="bg-surface-variant/20 rounded p-4 mb-4">
+        <p class="font-label-caps text-[10px] text-electric-blue mb-2">REAL DATA (not AI-generated) — recent transaction activity</p>
+        ${warning}
+        <table class="w-full text-left font-data-code text-xs">
+          <thead class="text-on-surface-variant uppercase text-[10px]"><tr><th class="px-3 py-1">When</th><th class="px-3 py-1">Customer</th><th class="px-3 py-1 text-right">Items</th><th class="px-3 py-1 text-right">Total</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  return "";
+}
+
+function renderEngineSection(engine, entry) {
+  const container = document.getElementById("plan-engine-sections");
+  const realDataHtml = entry.real_data ? renderPlanRealData(entry.real_data) : "";
+  const card = document.createElement("div");
+  card.className = "glass-panel rounded-lg p-6 mb-4";
+  card.innerHTML = `
+    <h3 class="text-lg font-bold mb-3 flex items-center space-x-2">
+      <span class="material-symbols-outlined text-electric-blue">${engine.icon}</span>
+      <span>${escapeHtml(engine.label)}</span>
+    </h3>
+    ${realDataHtml}
+    <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.narrative)}</p>
+  `;
+  container.appendChild(card);
+}
+
+async function runEnginePipeline(planId, stepsToRun) {
+  for (const engine of stepsToRun) {
+    setEngineProgress(engine.key, "running");
+    try {
+      const entry = await api(`/api/plans/${encodeURIComponent(planId)}/run/${engine.key}`, { method: "POST" });
+      setEngineProgress(engine.key, "done");
+      renderEngineSection(engine, entry);
+    } catch (e) {
+      setEngineProgress(engine.key, "failed");
+      const container = document.getElementById("plan-engine-sections");
+      const errDiv = document.createElement("div");
+      errDiv.className = "glass-panel rounded-lg p-4 mb-4 border border-data-negative/40 text-sm text-data-negative";
+      errDiv.textContent = `Couldn't run ${engine.label}: ${e.message}`;
+      container.appendChild(errDiv);
+      return;
+    }
+  }
+  document.getElementById("plan-chat-entry").classList.remove("hidden");
+}
+
+async function loadPlanHistory(selectedId) {
+  const select = document.getElementById("plan-history-select");
+  try {
+    const list = await api("/api/plans");
+    if (!list.length) {
+      select.classList.add("hidden");
+      return [];
+    }
+    select.innerHTML = "";
+    select.appendChild(new Option("— Start a new plan —", ""));
+    list.forEach((p) => {
+      select.appendChild(new Option(`${new Date(p.created_at).toLocaleString()} — ${p.goal} (${p.engines_completed}/${p.engines_total})`, p.id));
+    });
+    select.value = selectedId || "";
+    select.classList.remove("hidden");
+    return list;
+  } catch (e) {
+    select.classList.add("hidden");
+    return [];
+  }
+}
+
+async function onPlanHistoryChange() {
+  const id = document.getElementById("plan-history-select").value;
+  if (!id) {
+    startNewPlan();
+    return;
+  }
+  planStarted = true;
+  const plan = await api(`/api/plans/${encodeURIComponent(id)}`);
+  currentPlanId = plan.id;
+  showPlanPipeline(plan);
+
+  const remaining = [];
+  for (const engine of ENGINE_STEPS) {
+    const entry = plan.engines[engine.key];
+    if (entry) {
+      setEngineProgress(engine.key, "done");
+      renderEngineSection(engine, entry);
+    } else {
+      remaining.push(engine);
+    }
+  }
+
+  if (remaining.length === 0) {
+    document.getElementById("plan-chat-entry").classList.remove("hidden");
+  } else {
+    await runEnginePipeline(plan.id, remaining);
+  }
+}
+
+function openPlanChat() {
+  currentChatBase = `/api/plans/${encodeURIComponent(currentPlanId)}`;
+  document.getElementById("chat-messages").innerHTML = "";
+  appendChatBubble("assistant", "Got it — I've reviewed your full plan. What would you like to know?");
+  openChatModal();
 }
 
 // ---------- theme toggle ----------

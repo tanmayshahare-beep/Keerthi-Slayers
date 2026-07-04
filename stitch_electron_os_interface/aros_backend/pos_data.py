@@ -35,3 +35,24 @@ def get_sale_items() -> pd.DataFrame:
             conn,
             parse_dates=["timestamp"],
         )
+
+
+def get_recent_sales(limit: int = 15) -> pd.DataFrame:
+    """Most recent transactions with their item count. Note: customer_name is
+    almost always "Guest" in this dataset (no loyalty/customer-ID system
+    exists yet) - this is transaction activity, not a per-customer view."""
+    with _connect() as conn:
+        return pd.read_sql(
+            """
+            SELECT s.id, s.timestamp, s.total_amount, s.customer_name,
+                   COUNT(si.id) AS item_count
+            FROM sales s
+            LEFT JOIN sale_items si ON si.sale_id = s.id
+            GROUP BY s.id
+            ORDER BY s.timestamp DESC
+            LIMIT ?
+            """,
+            conn,
+            params=(limit,),
+            parse_dates=["timestamp"],
+        )

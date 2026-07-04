@@ -130,6 +130,20 @@ quirk, which is part of why it's the default.
 
 ---
 
+### Step 6 (optional): Build a full Business Plan
+
+The **Plan** tab walks you through a goal, timeframe, and budget (pick a
+location first, same list as everywhere else), then runs six local-LLM
+agents in sequence - Strategy, Marketing, Lead Gen, Sales, Analytics,
+Customer Success - each one building on everything before it. Takes about
+a minute or two since it's six real model calls back to back; you'll see
+each step's status update live. Needs the same Ollama setup as Step 5.
+When it finishes, **ASK ABOUT THIS PLAN →** opens a chat grounded in the
+whole plan. Use the history dropdown at the top to revisit past plans or
+**NEW PLAN** to start another.
+
+---
+
 ### Troubleshooting
 
 | Symptom | Likely cause |

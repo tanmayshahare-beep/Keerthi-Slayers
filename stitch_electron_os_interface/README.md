@@ -65,6 +65,24 @@ llama3` once, then either the Ollama app or `ollama serve` in the
 background) — if it's unreachable, the buttons show a clear message instead
 of hanging or crashing.
 
+The **Plan** tab is a guided goal-setting conversation (chat-bubble
+questions, but answers come from buttons/a number field, not text parsing —
+reliable data in) that captures a goal, timeframe, and budget, then runs a
+sequential 6-agent pipeline (`plans.py`): **Strategy → Marketing → Lead Gen
+→ Sales → Analytics → Customer Success**. Each engine is a local-LLM agent
+(`agents.py`) that sees the goal/budget/timeframe *and* every earlier
+engine's output, so the six read as one coherent plan instead of
+independent opinions — this takes ~60-90s total (six sequential local
+model calls). Two engines also carry real, non-LLM data alongside their
+narrative: **Analytics Engine** reuses the exact same classical analysis as
+Reports, and **Customer Success Engine** shows real recent transaction
+activity from `pos_system.db` — which, honestly, is 100% logged under a
+generic "Guest" customer today (no loyalty/customer-ID system exists yet),
+and the UI says so plainly rather than pretending otherwise. Once all six
+finish, **Ask About This Plan** opens a chat grounded in the full pipeline
+output. Past plans are browsable and resumable from their own history
+dropdown, same pattern as Reports.
+
 `DESIGN.md` documents the visual design system the UI follows. `screen.png`
 is a reference mockup of the original concept (superseded by the working app).
 

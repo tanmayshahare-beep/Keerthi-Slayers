@@ -34,7 +34,7 @@ def _report_path(report_id: str) -> str:
     return os.path.join(REPORTS_DIR, f"{safe_id}.json")
 
 
-def _main_store_section() -> dict | None:
+def main_store_section() -> dict | None:
     try:
         products = pos_data.get_products()
     except FileNotFoundError:
@@ -52,7 +52,7 @@ def _main_store_section() -> dict | None:
     }
 
 
-def _tn_network_section(location: str) -> dict | None:
+def tn_network_section(location: str) -> dict | None:
     locations = central_data.get_locations()
     if locations.empty:
         return None
@@ -85,7 +85,7 @@ def generate_report(location: str = "main") -> dict:
     report_id = f"report_{generated_at:%Y%m%d_%H%M%S}"
     label = location_label(location)
 
-    section = _main_store_section() if location == "main" else _tn_network_section(location)
+    section = main_store_section() if location == "main" else tn_network_section(location)
     sections = [section] if section is not None else []
 
     if not sections:
