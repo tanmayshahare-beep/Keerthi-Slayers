@@ -10,7 +10,7 @@ anywhere in this repo.
 | :--- | :--- |
 | [`pos-system/`](pos-system/README.md) | **Hegxib POS** — the actual point-of-sale app. Offline, SQLite-backed, phone-as-barcode-scanner, inventory management. This is what a cashier runs. |
 | [`HQ_Retail_OS/`](SYNC_SETUP.md) | Optional receiver for a central "HQ" database, so multiple store laptops can push their sales to one place over the local network. |
-| [`stitch_electron_os_interface/`](stitch_electron_os_interface/README.md) | **AROS** — a separate Electron desktop app that reads the POS/HQ databases (read-only) and turns them into an insights dashboard: Pareto/trend analysis, live retail news, multi-location comparison, and a local-LLM chat (via [Ollama](https://ollama.com)) that explains a generated report and answers follow-up questions. |
+| [`stitch_electron_os_interface/`](stitch_electron_os_interface/README.md) | **AROS** — a separate Electron desktop app that reads the POS/HQ databases (read-only) and turns them into an insights dashboard: Pareto/trend analysis, live retail news, multi-location comparison, classical-stats **Reports**, and a **Plan** tab where a guided goal/timeframe/budget conversation feeds a sequential 6-agent pipeline (Strategy → Marketing → Lead Gen → Sales → Analytics → Customer Success). Every AI piece runs on a local model via [Ollama](https://ollama.com) — nothing leaves the machine, and no LLM is used for the underlying numbers themselves. |
 
 Each folder's own README has the real setup/run instructions for that piece —
 this file is just the map.
@@ -32,7 +32,8 @@ npm start
 ```
 See [`stitch_electron_os_interface/README.md`](stitch_electron_os_interface/README.md)
 and `instructions.txt` in that folder for the full walkthrough (multi-location
-demo data, News tab, and the local-LLM report chat are all optional add-ons
+demo data, the News tab, classical-stats Reports, the local-LLM report chat,
+and the multi-agent Business Plan pipeline are all optional add-ons
 documented there).
 
 **Syncing multiple stores to one HQ database?** See [`SYNC_SETUP.md`](SYNC_SETUP.md).
