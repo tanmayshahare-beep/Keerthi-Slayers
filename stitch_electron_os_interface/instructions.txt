@@ -66,6 +66,15 @@ running behind it.
    Pareto (80/20) breakdown of which categories/products drive revenue, and
    week-over-week trend shifts. Use the filter box to search products, and
    the switch in the sidebar to toggle light/dark mode.
+
+   Right below the KPI tiles is a **Business Scorecard** - Business Health,
+   Growth, Revenue Opportunity, and Customer Health scores plus Risk
+   Alerts, all real numbers computed instantly for whichever location is
+   selected. Click **GENERATE AI INSIGHTS** to also get a Lead Score,
+   Market Readiness, AI Recommendations, and an Executive Summary from the
+   local LLM (needs the same Ollama setup as Step 5 below) - those four are
+   clearly marked as AI estimates since there's no real lead or
+   market-research data to measure them from.
 4. **News tab** — real, live retail-industry headlines (free Google News
    RSS, no API key or setup needed). It has its own location dropdown, same
    set of locations as Insights — switching it changes the search query

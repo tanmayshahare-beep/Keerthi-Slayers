@@ -18,6 +18,8 @@ upfront about the limits of what the data actually supports rather than
 inventing specifics the business hasn't provided.
 """
 
+import re
+
 AGENTS = {
     "report_explainer": {
         "display_name": "Report Explainer",
@@ -152,6 +154,32 @@ AGENTS = {
             "guessing."
         ),
     },
+    "scorecard_advisor": {
+        "display_name": "Scorecard Advisor",
+        "system_prompt": (
+            "You are a retail business analyst producing a concise executive "
+            "scorecard. You're given real classical statistics about a "
+            "store's performance: a Business Health Score, a Growth Score, a "
+            "Revenue Opportunity estimate, a Customer Health proxy, and a "
+            "list of Risk Alerts - all computed directly from real sales "
+            "data, not by you. This business has no lead-generation or "
+            "market-research data on file, so you must ESTIMATE two "
+            "additional readiness scores using sound judgment from the real "
+            "numbers you were given:\n"
+            "- Lead Score (0-100): how well-positioned this business looks "
+            "right now to generate and convert new leads.\n"
+            "- Market Readiness (0-100): how ready this business looks to "
+            "grow, expand, or take on more demand.\n"
+            "Be explicit that these two are qualitative estimates, not "
+            "measured data. Then give 3-5 concrete AI Recommendations, and a "
+            "short Executive Summary (2-3 sentences) tying everything "
+            "together. Format your entire answer with exactly these four "
+            "section headers, in this order, each on its own line: "
+            "'## Lead Score', '## Market Readiness', '## AI Recommendations', "
+            "'## Executive Summary'. Do not add any other headers or "
+            "commentary outside these four sections."
+        ),
+    },
 }
 
 
@@ -249,3 +277,46 @@ def build_plan_chat_seed_messages(plan: dict) -> list[dict]:
         {"role": "user", "content": f"{header}\n\n{engine_sections}"},
         {"role": "assistant", "content": "Got it — I've reviewed your full plan. What would you like to know?"},
     ]
+
+
+SCORECARD_SECTIONS = ["Lead Score", "Market Readiness", "AI Recommendations", "Executive Summary"]
+
+
+def build_scorecard_messages(narrative: str, scorecard: dict, location_label: str, currency: str) -> list[dict]:
+    agent = get_agent("scorecard_advisor")
+    alerts_text = "\n".join(f"- [{a['severity'].upper()}] {a['text']}" for a in scorecard["risk_alerts"])
+    bh, gr, ro, ch = scorecard["business_health"], scorecard["growth"], scorecard["revenue_opportunity"], scorecard["customer_health"]
+
+    header = (
+        f"Location: {location_label}\n"
+        f"Business Health Score: {bh['score']}/100 ({bh['level']})\n"
+        f"Growth Score: {gr['score']}/100 ({gr.get('trending_up', 0)} of {gr.get('tracked', 0)} tracked items trending up week-over-week)\n"
+        f"Revenue Opportunity: {currency}{ro['estimated_monthly_value']:,.2f}/month recoverable from {ro['products_affected']} out-of-stock product(s)\n"
+        f"Customer Health (visit-frequency proxy): {ch['score']}/100 ({ch['visit_frequency_trend']}, {ch['avg_daily_transactions']} avg daily transactions)\n"
+        f"Risk Alerts:\n{alerts_text}"
+    )
+
+    return [
+        {"role": "system", "content": agent["system_prompt"]},
+        {"role": "user", "content": f"{header}\n\nSales data summary:\n{narrative}\n\nProduce the scorecard."},
+    ]
+
+
+def split_scorecard_response(text: str) -> dict:
+    """Splits the scorecard_advisor's '## Header' formatted reply into named
+    sections. Falls back to putting the whole reply under Executive Summary
+    if the model didn't follow the format - still shows something useful
+    rather than dropping the response."""
+    pattern = "|".join(re.escape(h) for h in SCORECARD_SECTIONS)
+    matches = list(re.finditer(rf"##\s*({pattern})\s*\n", text))
+    if not matches:
+        return {"Lead Score": "", "Market Readiness": "", "AI Recommendations": "", "Executive Summary": text.strip()}
+
+    sections = {}
+    for i, match in enumerate(matches):
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        sections[match.group(1)] = text[start:end].strip()
+    for name in SCORECARD_SECTIONS:
+        sections.setdefault(name, "")
+    return sections

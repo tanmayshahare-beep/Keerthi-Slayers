@@ -363,19 +363,123 @@ function renderTrendTable(tableId, rows) {
     .join("");
 }
 
+// ---------- business scorecard ----------
+// Business Health / Growth / Revenue Opportunity / Customer Health / Risk
+// Alerts are classical (report_analysis.py, computed instantly alongside
+// the rest of Insights - no LLM). Lead Score / Market Readiness / AI
+// Recommendations / Executive Summary are the scorecard_advisor agent
+// (agents.py), on demand via GENERATE AI INSIGHTS since they're a real
+// local-model call, not something to fire silently on every page load.
+
+function scoreColor(score) {
+  if (score === null || score === undefined) return "text-on-surface-variant";
+  if (score >= 75) return "text-data-positive";
+  if (score >= 50) return "text-electric-blue";
+  if (score >= 25) return "text-on-surface";
+  return "text-data-negative";
+}
+
+function renderScorecard(scorecard, currency) {
+  const { business_health, growth, revenue_opportunity, customer_health, risk_alerts } = scorecard;
+
+  const scoreTile = (label, scoreObj, extra) => `
+    <div class="glass-panel p-4 rounded-lg">
+      <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">${label}</span>
+      <h3 class="text-2xl font-black ${scoreColor(scoreObj.score)}">${scoreObj.score === null ? "—" : scoreObj.score}</h3>
+      <span class="text-[10px] text-on-surface-variant capitalize">${escapeHtml(scoreObj.level)}</span>
+      ${extra ? `<p class="text-[10px] text-on-surface-variant mt-1">${extra}</p>` : ""}
+    </div>
+  `;
+
+  document.getElementById("scorecard-tiles").innerHTML =
+    scoreTile("BUSINESS HEALTH", business_health) +
+    scoreTile("GROWTH SCORE", growth, growth.tracked ? `${growth.trending_up}/${growth.tracked} trending up` : "") +
+    `<div class="glass-panel p-4 rounded-lg">
+      <span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">REVENUE OPPORTUNITY</span>
+      <h3 class="text-2xl font-black text-electric-blue">${currency}${revenue_opportunity.estimated_monthly_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+      <span class="text-[10px] text-on-surface-variant">/mo from ${revenue_opportunity.products_affected} restocked item(s)</span>
+    </div>` +
+    scoreTile(
+      "CUSTOMER HEALTH",
+      customer_health,
+      customer_health.visit_frequency_trend !== "n/a" ? `${customer_health.avg_daily_transactions} avg daily visits (${customer_health.visit_frequency_trend})` : ""
+    );
+
+  document.getElementById("scorecard-alerts").innerHTML = risk_alerts
+    .map((a) => {
+      const style =
+        a.severity === "high"
+          ? "border-data-negative/40 text-data-negative"
+          : a.severity === "medium"
+          ? "border-secondary/40 text-secondary"
+          : "border-outline-variant text-on-surface-variant";
+      const icon = a.severity === "high" ? "warning" : a.severity === "medium" ? "info" : "check_circle";
+      return `<div class="glass-panel border ${style} rounded-lg px-4 py-2 flex items-center space-x-2 text-xs">
+        <span class="material-symbols-outlined text-sm">${icon}</span>
+        <span>${escapeHtml(a.text)}</span>
+      </div>`;
+    })
+    .join("");
+
+  // Clear stale AI content from whatever location/report was showing before.
+  document.getElementById("ai-scorecard-content").innerHTML = "";
+  document.getElementById("ai-scorecard-status").classList.add("hidden");
+}
+
+async function generateAiScorecard() {
+  const btn = document.getElementById("ai-scorecard-btn");
+  const statusEl = document.getElementById("ai-scorecard-status");
+  const contentEl = document.getElementById("ai-scorecard-content");
+  btn.disabled = true;
+  statusEl.classList.remove("hidden", "text-data-negative");
+  statusEl.textContent = "Asking the local LLM for Lead Score, Market Readiness, Recommendations, and an Executive Summary… (can take ~30-60s)";
+  contentEl.innerHTML = "";
+
+  try {
+    const sections = await api(`/api/scorecard/ai?location=${encodeURIComponent(currentLocation)}`, { method: "POST" });
+    statusEl.classList.add("hidden");
+    contentEl.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div class="glass-panel rounded-lg p-4">
+          <h4 class="font-label-caps text-[10px] text-secondary mb-2">LEAD SCORE (AI ESTIMATE)</h4>
+          <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Lead Score"])}</p>
+        </div>
+        <div class="glass-panel rounded-lg p-4">
+          <h4 class="font-label-caps text-[10px] text-secondary mb-2">MARKET READINESS (AI ESTIMATE)</h4>
+          <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Market Readiness"])}</p>
+        </div>
+      </div>
+      <div class="glass-panel rounded-lg p-4 mb-4">
+        <h4 class="font-label-caps text-[10px] text-electric-blue mb-2">AI RECOMMENDATIONS</h4>
+        <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["AI Recommendations"])}</p>
+      </div>
+      <div class="glass-panel rounded-lg p-4">
+        <h4 class="font-label-caps text-[10px] text-electric-blue mb-2">EXECUTIVE SUMMARY</h4>
+        <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Executive Summary"])}</p>
+      </div>
+    `;
+  } catch (e) {
+    statusEl.classList.add("text-data-negative");
+    statusEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function showInsights() {
   currentLocation = "main";
   currentCurrency = "$";
   const locationSelect = document.getElementById("location-select");
   if (locationSelect) locationSelect.value = "main";
 
-  const [products, categories, { pareto, trend_shifts }] = await Promise.all([
+  const [products, categories, { pareto, trend_shifts, scorecard }] = await Promise.all([
     api("/api/products"),
     api("/api/categories"),
     api("/api/insights"),
   ]);
   cachedProducts = products;
   cachedPareto = pareto;
+  renderScorecard(scorecard, "$");
 
   const totalRevenue = pareto.by_product.reduce((sum, r) => sum + r.revenue, 0);
   document.getElementById("kpi-revenue").textContent = `$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -476,8 +580,9 @@ async function onLocationChange() {
 }
 
 async function showLocationInsights(location) {
-  const { stats, pareto, trend_shifts } = await api(`/api/location-insights?location=${encodeURIComponent(location)}`);
+  const { stats, pareto, trend_shifts, scorecard } = await api(`/api/location-insights?location=${encodeURIComponent(location)}`);
   cachedPareto = pareto;
+  renderScorecard(scorecard, "₹");
 
   document.getElementById("kpi-revenue").textContent = `₹${stats.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   document.getElementById("kpi-products").textContent = stats.products_tracked;

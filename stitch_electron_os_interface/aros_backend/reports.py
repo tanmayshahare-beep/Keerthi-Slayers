@@ -43,7 +43,7 @@ def main_store_section() -> dict | None:
     if sale_items.empty:
         return None
     category_map = app_db.get_category_assignments()  # {} is fine - pareto/trend just skip category grouping
-    analysis = report_analysis.analyze_dataset(sale_items, products, category_map)
+    analysis = report_analysis.analyze_dataset(sale_items, products, category_map, currency="$")
     return {
         "title": "Main Store (USD)",
         "currency": "$",
@@ -61,7 +61,7 @@ def tn_network_section(location: str) -> dict | None:
     if sale_items.empty:
         return None
     category_map = tn_categories.build_category_map(sale_items["barcode"].dropna().unique())
-    analysis = report_analysis.analyze_dataset(sale_items, products, category_map)
+    analysis = report_analysis.analyze_dataset(sale_items, products, category_map, currency="₹")
     title = "All Tamil Nadu Locations (₹)" if location == "all" else f"{central_data.label_for_store(location)} (₹)"
     return {
         "title": title,

@@ -192,6 +192,20 @@
         </div>
       </div>
 
+      <div class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-label-caps text-[10px] text-on-surface-variant tracking-wide">BUSINESS SCORECARD</h3>
+          <button class="flex items-center space-x-2 border border-secondary text-secondary hover:bg-secondary hover:text-deep-obsidian font-bold px-3 py-1.5 rounded transition-colors" id="ai-scorecard-btn" onclick="generateAiScorecard()">
+            <span class="material-symbols-outlined text-sm">auto_awesome</span>
+            <span class="font-label-caps text-[10px]">GENERATE AI INSIGHTS</span>
+          </button>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" id="scorecard-tiles"></div>
+        <div class="space-y-2 mb-4" id="scorecard-alerts"></div>
+        <p class="text-xs text-data-negative hidden" id="ai-scorecard-status"></p>
+        <div id="ai-scorecard-content"></div>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div class="glass-panel rounded-lg overflow-hidden">
           <div class="p-4 border-b border-outline-variant">
