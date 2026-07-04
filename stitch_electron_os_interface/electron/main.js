@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, shell } = require("electron");
 const { spawn } = require("child_process");
 const http = require("http");
 const path = require("path");
@@ -60,6 +60,15 @@ async function createWindow() {
     width: 900,
     height: 720,
   });
+
+  // News tab links (target="_blank") should open in the user's normal
+  // browser, not as a second chromeless Electron window pointed at an
+  // arbitrary external site.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
   win.loadURL(BACKEND_URL);
 }
 

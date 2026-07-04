@@ -8,31 +8,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  /* Theme tokens: dark (default) values, overridden under html.light.
-     Referenced from tailwind.config below so every bg-*/text-*/border-*
-     utility using these names repaints automatically on theme toggle. */
-  html {
-      --c-deep-obsidian: #0A0A0C;
-      --c-slate-gray: #1A1A1E;
-      --c-on-surface: #e5e1e4;
-      --c-on-surface-variant: #b9cacb;
-      --c-outline-variant: #3b494b;
-      --c-surface-variant: #353437;
-      --c-electric-blue: #00F0FF;
-      --c-data-positive: #00FF41;
-      --c-data-negative: #FF3131;
-  }
-  html.light {
-      --c-deep-obsidian: #F8F9FA;
-      --c-slate-gray: #FFFFFF;
-      --c-on-surface: #1A1A1E;
-      --c-on-surface-variant: #5B6770;
-      --c-outline-variant: #E2E5E7;
-      --c-surface-variant: #EEF0F1;
-      --c-electric-blue: #006970;
-      --c-data-positive: #0A7A2F;
-      --c-data-negative: #B00020;
-  }
+  /* Theme tokens (--c-*) are applied via JS (app.js applyTheme()) using
+     style.setProperty on <html>, not as stylesheet rules here. A bare
+     `html { --c-x: ... }` rule as the first rule in this block was observed
+     to be silently dropped from the parsed CSSOM in this Electron/Chromium
+     build (its very next sibling rule parsed fine) - setting the variables
+     imperatively sidesteps that instead of depending on it being fixed. */
 
   body { font-family: 'Inter', sans-serif; transition: background-color 0.3s ease, color 0.3s ease; }
   .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-size: 20px; vertical-align: middle; }
@@ -131,6 +112,10 @@
         <span class="material-symbols-outlined">dashboard</span>
         <span class="text-sm">Insights</span>
       </a>
+      <a class="nav-link flex items-center space-x-3 px-3 py-3 cursor-pointer text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-colors duration-200" data-view="news" href="#">
+        <span class="material-symbols-outlined">newspaper</span>
+        <span class="text-sm">News</span>
+      </a>
       <a class="nav-link flex items-center space-x-3 px-3 py-3 cursor-pointer text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-colors duration-200" data-view="wizard" href="#">
         <span class="material-symbols-outlined">edit_note</span>
         <span class="text-sm">Edit Categories</span>
@@ -158,12 +143,15 @@
 
     <!-- INSIGHTS VIEW -->
     <section data-view="insights">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold">Insights</h2>
-        <button class="flex items-center space-x-2 font-label-caps text-[10px] text-on-surface-variant hover:text-electric-blue border border-outline-variant hover:border-electric-blue rounded px-3 py-1.5 transition-colors" id="refresh-insights-btn" onclick="refreshInsights()">
-          <span class="material-symbols-outlined text-sm">refresh</span>
-          <span>REFRESH</span>
-        </button>
+      <div class="flex items-center justify-between mb-4 gap-4">
+        <h2 class="text-xl font-bold whitespace-nowrap">Insights</h2>
+        <div class="flex items-center space-x-3">
+          <select class="hidden field-input rounded px-3 py-1.5 text-xs" id="location-select" onchange="onLocationChange()"></select>
+          <button class="flex items-center space-x-2 font-label-caps text-[10px] text-on-surface-variant hover:text-electric-blue border border-outline-variant hover:border-electric-blue rounded px-3 py-1.5 transition-colors" id="refresh-insights-btn" onclick="refreshInsights()">
+            <span class="material-symbols-outlined text-sm">refresh</span>
+            <span>REFRESH</span>
+          </button>
+        </div>
       </div>
 
       <div class="hidden glass-panel border border-data-negative/40 rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-4" id="uncategorized-warning">
@@ -249,6 +237,27 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- NEWS VIEW -->
+    <section data-view="news">
+      <div class="flex items-center justify-between mb-1 gap-4">
+        <h2 class="text-xl font-bold whitespace-nowrap">News</h2>
+        <div class="flex items-center space-x-3">
+          <select class="field-input rounded px-3 py-1.5 text-xs" id="news-location-select" onchange="onNewsLocationChange()"></select>
+          <button class="flex items-center space-x-2 font-label-caps text-[10px] text-on-surface-variant hover:text-electric-blue border border-outline-variant hover:border-electric-blue rounded px-3 py-1.5 transition-colors" id="refresh-news-btn" onclick="refreshNews()">
+            <span class="material-symbols-outlined text-sm">refresh</span>
+            <span>REFRESH</span>
+          </button>
+        </div>
+      </div>
+      <p class="text-sm text-on-surface-variant mb-6" id="news-query-label">&nbsp;</p>
+
+      <div class="hidden text-sm text-on-surface-variant glass-panel rounded-lg p-6 text-center" id="news-empty-state">
+        No news found for this location right now — try REFRESH, or check your internet connection.
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="news-cards"></div>
     </section>
 
     <!-- WIZARD VIEW -->

@@ -66,8 +66,34 @@ running behind it.
    Pareto (80/20) breakdown of which categories/products drive revenue, and
    week-over-week trend shifts. Use the filter box to search products, and
    the switch in the sidebar to toggle light/dark mode.
-4. Next time you run `npm start`, you'll go straight to the login screen —
+4. **News tab** — real, live retail-industry headlines (free Google News
+   RSS, no API key or setup needed). It has its own location dropdown, same
+   set of locations as Insights — switching it changes the search query
+   (e.g. "Chennai retail business news"). Click a headline to open it in
+   your regular web browser.
+5. Next time you run `npm start`, you'll go straight to the login screen —
    your account and categories are remembered.
+
+---
+
+### Step 4 (optional): Multi-location insights (Tamil Nadu shop network)
+
+A dropdown next to REFRESH lets you switch Insights between your single
+`pos_system.db` store (USD) and a simulated Tamil Nadu chain (₹) spread
+across Dindigul, Madurai, Coimbatore, Tiruchirappalli, and Chennai — each
+with its own genuinely different revenue/category mix. The dropdown only
+appears once that data exists. To generate it:
+
+```cmd
+cd "C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System\pos-system"
+python tamil_nadu_local_simulator.py --no-live
+```
+
+This seeds 45 days of history per shop into `HQ_Retail_OS/central_hq.db`
+(read-only from AROS's side, same as `pos_system.db`) and exits. Drop
+`--no-live` to keep it running afterward and stream new sales continuously
+(Ctrl+C to stop) — either way, just refresh/reopen Insights in AROS to see
+the new locations show up.
 
 ---
 
