@@ -2,11 +2,15 @@
 this machine. Ollama exposes a small REST API (default localhost:11434);
 we talk to it with plain `requests`, no extra SDK dependency.
 
-Model choice: "phi3" (Phi-3-mini, ~2.2GB) by default - picked for being a
-capable, genuinely lightweight instruction-following model well-suited to
-plain-language summarization and chat on modest/CPU hardware, per the ask
-for something lightweight for a demo. Override with the AROS_OLLAMA_MODEL
-env var if you'd rather point at a different local model.
+Model choice: "llama3" (Llama 3 8B, ~4.7GB) by default. phi3 (3.8B) was
+tried first for being extremely lightweight, but produced noticeably
+shakier reasoning on multi-step tasks like correlating news with sales
+trends; llama3 gave clearly better, still-fast (~10s on CPU) answers on the
+same prompts in side-by-side testing. Note some newer local models (e.g.
+Qwen3-family tags, including deepseek-r1 which is a Qwen3 distill) spend
+their token budget on hidden "thinking" output and can come back empty at
+a modest num_predict - llama3 has no such gotcha. Override with the
+AROS_OLLAMA_MODEL env var to point at a different local model.
 """
 
 import os
@@ -14,7 +18,7 @@ import os
 import requests
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("AROS_OLLAMA_MODEL", "phi3")
+DEFAULT_MODEL = os.environ.get("AROS_OLLAMA_MODEL", "llama3")
 
 STATUS_TIMEOUT = 3
 CHAT_TIMEOUT = 180  # local CPU inference on a "lightweight" model is still not instant

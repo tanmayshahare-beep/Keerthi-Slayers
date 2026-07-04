@@ -24,26 +24,46 @@ own copy of the same location filter, so the query changes with the
 location ("Chennai retail business news", "grocery retail industry news",
 etc). Article links open in your system browser, not inside the app window.
 
-The **GENERATE REPORT** button (top-right, visible from anywhere in the app)
-runs a classical, non-LLM analysis — Pareto/ABC, an OLS revenue trend line,
-day-of-week seasonality, Herfindahl-Hirschman concentration — over both data
-sources at once, and saves it as a timestamped JSON file under
-`aros_backend/reports/` (gitignored; see `report_analysis.py` for the math,
-`reports.py` for the file store). Past reports are browsable from the
-**Reports** tab.
+The **GENERATE REPORT** button (top-right, visible from anywhere in the app;
+the Reports tab has its own copy since the fixed one hides there to avoid
+overlapping it) runs a classical, non-LLM analysis — Pareto/ABC, an OLS
+revenue trend line, day-of-week seasonality, Herfindahl-Hirschman
+concentration — scoped to whichever location you pick (Main Store, All
+Tamil Nadu Locations, or one city), and saves it as a timestamped JSON file
+under `aros_backend/reports/` (gitignored; see `report_analysis.py` for the
+math, `reports.py` for the file store and per-report location tracking).
+Past reports are browsable from the **Reports** tab, each labeled with the
+location it covers.
 
-Each report ends with a **Send to LLM** button that hands the report's plain
-text narrative to a local model running in [Ollama](https://ollama.com) —
-nothing leaves the machine. A `report_explainer` agent (`agents.py`) explains
-the report in plain, non-technical language, then opens a chat window
-(`chat_store.py` holds the conversation, one per report, server-side) where
-you can ask follow-up questions grounded in that report's data.
-`agents.py` is a registry on purpose — it currently holds one agent, but is
-where additional agents get added later. Default model is `phi3` (small,
-fast on CPU); override with the `AROS_OLLAMA_MODEL` env var. Requires Ollama
-installed and running (`ollama pull phi3` once, then either the Ollama app
-or `ollama serve` in the background) — if it's unreachable, the button shows
-a clear message instead of hanging or crashing.
+Each report ends with two agent buttons that hand its narrative to a local
+model running in [Ollama](https://ollama.com) — nothing leaves the machine:
+
+- **Send to LLM** — the `report_explainer` agent explains the report in
+  plain, non-technical language.
+- **Correlate with News** — the `news_correlator` agent fetches real,
+  current headlines for the report's own location (same free Google News
+  RSS the News tab uses) and looks for plausible connections to the sales
+  patterns, honestly saying so when nothing seems related rather than
+  forcing a correlation.
+
+Either one opens the same chat window (`chat_store.py` holds the
+conversation, one per report, server-side) for follow-up questions grounded
+in that report's data (and, after Correlate with News, the headlines it
+used). `agents.py` is a registry on purpose — two agents live there now,
+and it's where more get added later.
+
+Default model is `llama3` (8B, ~4.7GB) — a smaller model (`phi3`, 3.8B) was
+tried first but gave noticeably shakier multi-step reasoning (e.g. missing
+real correlations); llama3 was clearly better in side-by-side testing while
+still answering in ~10s on CPU. Override with the `AROS_OLLAMA_MODEL` env
+var if you'd rather use a different pulled model — but note some newer tags
+(anything Qwen3-family, including the `deepseek-r1` tag, which is a Qwen3
+distill) spend their token budget on hidden "thinking" output first and can
+come back empty unless you raise `num_predict` accordingly in
+`ollama_client.py`. Requires Ollama installed and running (`ollama pull
+llama3` once, then either the Ollama app or `ollama serve` in the
+background) — if it's unreachable, the buttons show a clear message instead
+of hanging or crashing.
 
 `DESIGN.md` documents the visual design system the UI follows. `screen.png`
 is a reference mockup of the original concept (superseded by the working app).

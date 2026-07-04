@@ -163,15 +163,18 @@ def location_insights(location: str = "all", _user: str = Depends(auth.require_s
     return {"stats": stats, "pareto": pareto, "trend_shifts": trend_shifts}
 
 
+def _news_label_for(location: str) -> str | None:
+    return central_data.label_for_store(location) if location not in ("main", "all") else None
+
+
 @app.get("/api/news")
 def news_for_location(location: str = "main", _user: str = Depends(auth.require_session)):
-    label = central_data.label_for_store(location) if location not in ("main", "all") else None
-    return news.fetch_news(location, label)
+    return news.fetch_news(location, _news_label_for(location))
 
 
 @app.post("/api/reports/generate")
-def reports_generate(_user: str = Depends(auth.require_session)):
-    return reports.generate_report()
+def reports_generate(location: str = "main", _user: str = Depends(auth.require_session)):
+    return reports.generate_report(location)
 
 
 @app.get("/api/reports")
@@ -213,6 +216,32 @@ def reports_send_to_llm(report_id: str, _user: str = Depends(auth.require_sessio
     return {"explanation": reply}
 
 
+@app.post("/api/reports/{report_id}/correlate-news")
+def reports_correlate_news(report_id: str, _user: str = Depends(auth.require_session)):
+    """Second agent (news_correlator, agents.py): fetches real headlines for
+    this report's own location (news.py - same free Google News RSS the News
+    tab uses) and asks the local LLM whether they plausibly relate to the
+    report's sales patterns. Starts/replaces this report's conversation the
+    same way send-to-llm does - see agents.py's module docstring for why."""
+    report = reports.get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    location = report.get("location", "main")
+    news_result = news.fetch_news(location, _news_label_for(location))
+    messages = agents.build_news_correlation_messages(
+        report["narrative"], news_result["articles"], report.get("location_label", location)
+    )
+    try:
+        reply = ollama_client.chat(messages, num_predict=600)
+    except ollama_client.OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    messages.append({"role": "assistant", "content": reply})
+    chat_store.start_conversation(report_id, messages)
+    return {"explanation": reply, "articles_used": news_result["articles"]}
+
+
 @app.get("/api/reports/{report_id}/chat")
 def reports_chat_history(report_id: str, _user: str = Depends(auth.require_session)):
     history = chat_store.get_conversation(report_id) or []
@@ -222,7 +251,7 @@ def reports_chat_history(report_id: str, _user: str = Depends(auth.require_sessi
 @app.post("/api/reports/{report_id}/chat")
 def reports_chat(report_id: str, body: ChatMessage, _user: str = Depends(auth.require_session)):
     if chat_store.get_conversation(report_id) is None:
-        raise HTTPException(status_code=409, detail="Start with Send to LLM first.")
+        raise HTTPException(status_code=409, detail="Start with Send to LLM or Correlate with News first.")
 
     chat_store.append_message(report_id, "user", body.message)
     try:

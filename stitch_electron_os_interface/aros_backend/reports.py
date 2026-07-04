@@ -3,7 +3,13 @@
 Each report is a plain JSON file under reports/ - no database needed for
 what's essentially a handful of timestamped documents. Generation itself
 (report_analysis.py) is classical/cheap; this module just orchestrates
-pulling the two data sources together and persisting the result.
+pulling the right data source together and persisting the result.
+
+Reports are location-scoped (matching the same location set as Insights/News):
+"main" -> pos_system.db, "all" -> combined Tamil Nadu network, or a specific
+TN store_id. The chosen location is saved on the report itself so a later
+"correlate with news" pass (see agents.py/app.py) knows which location's
+headlines to fetch without the caller having to pass it again.
 """
 
 import datetime
@@ -46,37 +52,52 @@ def _main_store_section() -> dict | None:
     }
 
 
-def _tn_network_section() -> dict | None:
+def _tn_network_section(location: str) -> dict | None:
     locations = central_data.get_locations()
     if locations.empty:
         return None
-    products = central_data.get_products("all")
-    sale_items = central_data.get_sale_items("all")
+    products = central_data.get_products(location)
+    sale_items = central_data.get_sale_items(location)
+    if sale_items.empty:
+        return None
     category_map = tn_categories.build_category_map(sale_items["barcode"].dropna().unique())
     analysis = report_analysis.analyze_dataset(sale_items, products, category_map)
+    title = "All Tamil Nadu Locations (₹)" if location == "all" else f"{central_data.label_for_store(location)} (₹)"
     return {
-        "title": "Tamil Nadu Network (₹)",
+        "title": title,
         "currency": "₹",
         "analysis": analysis,
-        "narrative": report_analysis.build_narrative("Tamil Nadu Network (₹)", "₹", analysis),
+        "narrative": report_analysis.build_narrative(title, "₹", analysis),
     }
 
 
-def generate_report() -> dict:
+def location_label(location: str) -> str:
+    if location == "main":
+        return "Main Store (USD)"
+    if location == "all":
+        return "All Tamil Nadu Locations"
+    return central_data.label_for_store(location)
+
+
+def generate_report(location: str = "main") -> dict:
     _ensure_dir()
     generated_at = datetime.datetime.now()
     report_id = f"report_{generated_at:%Y%m%d_%H%M%S}"
+    label = location_label(location)
 
-    sections = [s for s in (_main_store_section(), _tn_network_section()) if s is not None]
+    section = _main_store_section() if location == "main" else _tn_network_section(location)
+    sections = [section] if section is not None else []
 
     if not sections:
-        narrative = "# Insights Report\n\nNo sales data available yet."
+        narrative = f"# Insights Report — {label}\n\nNo sales data available for this location."
     else:
-        narrative = "# Insights Report\n\n" + "\n\n".join(s["narrative"] for s in sections)
+        narrative = f"# Insights Report — {label}\n\n" + sections[0]["narrative"]
 
     report = {
         "id": report_id,
         "generated_at": generated_at.isoformat(),
+        "location": location,
+        "location_label": label,
         "method": (
             "Classical statistics only (pandas group-bys, Pareto/ABC analysis, "
             "ordinary-least-squares trend line, Herfindahl-Hirschman concentration "
@@ -105,6 +126,7 @@ def list_reports() -> list[dict]:
             summaries.append({
                 "id": report_id,
                 "generated_at": report.get("generated_at"),
+                "location_label": report.get("location_label", "Main Store (USD)"),
                 "section_titles": [s["title"] for s in report.get("sections", [])],
             })
         except (json.JSONDecodeError, OSError):

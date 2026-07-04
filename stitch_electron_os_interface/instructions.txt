@@ -99,23 +99,34 @@ the new locations show up.
 
 ### Step 5 (optional): Chat with a local LLM about a report
 
-The **Reports** tab's **SEND TO LLM** button explains a generated report in
-plain language and opens a chat window for follow-up questions — using a
-small model running entirely on your machine via [Ollama](https://ollama.com),
-not any cloud API.
+The **Reports** tab has its own location picker — generate a report for
+Main Store, All Tamil Nadu Locations, or one specific city. Each generated
+report ends with two buttons, both running entirely on your machine via
+[Ollama](https://ollama.com), not any cloud API:
+
+- **SEND TO LLM →** explains the report in plain language.
+- **CORRELATE WITH NEWS →** fetches real current headlines for that same
+  location and looks for plausible links to the sales patterns (and says
+  so plainly when nothing seems related, rather than forcing a connection).
+
+Either one opens a chat window for follow-up questions.
 
 1. Install Ollama from https://ollama.com if you don't have it.
 2. Pull the model once:
    ```cmd
-   ollama pull phi3
+   ollama pull llama3
    ```
 3. Make sure Ollama is running (the Ollama app running in your system tray
    is enough, or run `ollama serve` in a terminal).
-4. Generate a report, then click **SEND TO LLM →** at the bottom of it.
+4. Generate a report, then click either **SEND TO LLM →** or
+   **CORRELATE WITH NEWS →** at the bottom of it.
 
 Want a different local model? Set `AROS_OLLAMA_MODEL` before running
-`npm start` (e.g. `set AROS_OLLAMA_MODEL=llama3` on Windows), then
-`ollama pull` that model too.
+`npm start` (e.g. `set AROS_OLLAMA_MODEL=gemma3:4b` on Windows), then
+`ollama pull` that model too. Heads up: Qwen3-family models (including the
+`deepseek-r1` tag) hide their reasoning in a separate "thinking" pass and
+can come back empty at the default token budget - llama3 doesn't have this
+quirk, which is part of why it's the default.
 
 ---
 
@@ -128,8 +139,9 @@ Want a different local model? Set `AROS_OLLAMA_MODEL` before running
 | `FileNotFoundError: ...pos_system.db not found` | `pos-system/pos_system.db` doesn't exist yet — run Step 1.3 |
 | Wizard shows 0 products | `pos_system.db` exists but is empty — run `python seed_data.py` from `pos-system/` |
 | Forgot your local password | Delete `aros_backend/aros_app.db` and restart the app — you'll be prompted to create a new account (this does **not** touch your real sales data) |
-| "Couldn't reach Ollama" on SEND TO LLM | Ollama isn't running — start the Ollama app or run `ollama serve` |
-| "Model isn't pulled yet" on SEND TO LLM | Run `ollama pull phi3` (or whatever `AROS_OLLAMA_MODEL` you set) |
+| "Couldn't reach Ollama" on SEND TO LLM / CORRELATE WITH NEWS | Ollama isn't running — start the Ollama app or run `ollama serve` |
+| "Model isn't pulled yet" on SEND TO LLM / CORRELATE WITH NEWS | Run `ollama pull llama3` (or whatever `AROS_OLLAMA_MODEL` you set) |
+| SEND TO LLM / CORRELATE WITH NEWS comes back empty | Only if you changed `AROS_OLLAMA_MODEL` to a Qwen3-family model (e.g. `deepseek-r1`) - it spent its token budget on hidden "thinking" output. Switch back to `llama3`, or raise `num_predict` in `ollama_client.py` |
 
 ---
 

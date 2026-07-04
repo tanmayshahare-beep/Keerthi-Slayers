@@ -5,6 +5,7 @@ let wizardGroups = []; // [{ id, name, barcodes: [] }]
 let currentCurrency = "$";
 let currentLocation = "main"; // "main" | "all" | a Tamil Nadu store_id
 let currentNewsLocation = "main";
+let currentReportLocation = "main";
 let currentReportId = null;
 
 // ---------- theme tokens ----------
@@ -81,6 +82,11 @@ function showView(view) {
     el.classList.toggle("border-electric-blue", active);
     el.classList.toggle("text-on-surface-variant", !active);
   });
+  // The Reports tab has its own inline "GENERATE NEW REPORT" button in the
+  // same corner - the fixed one would otherwise sit on top of it and
+  // intercept clicks, so hide the redundant fixed one there.
+  const fixedGenerateBtn = document.getElementById("generate-report-btn");
+  if (fixedGenerateBtn) fixedGenerateBtn.style.display = view === "reports" ? "none" : "flex";
 }
 
 document.querySelectorAll(".nav-link").forEach((el) => {
@@ -683,22 +689,30 @@ function renderReport(report) {
   currentReportId = report.id;
   document.getElementById("report-empty-state").classList.add("hidden");
   const generatedAt = new Date(report.generated_at).toLocaleString();
+  const locationLabel = report.location_label || "Main Store (USD)";
 
   const sectionsHtml = report.sections.length
     ? report.sections.map(renderReportSection).join("")
-    : `<div class="glass-panel rounded-lg p-6 text-sm text-on-surface-variant">No sales data was available when this report was generated.</div>`;
+    : `<div class="glass-panel rounded-lg p-6 text-sm text-on-surface-variant">No sales data was available for ${escapeHtml(locationLabel)} when this report was generated.</div>`;
 
   document.getElementById("report-content").innerHTML = `
-    <p class="text-xs text-on-surface-variant mb-4">Generated ${generatedAt} — ${escapeHtml(report.method)}</p>
+    <p class="text-xs text-on-surface-variant mb-4">
+      <span class="font-label-caps text-electric-blue">${escapeHtml(locationLabel)}</span> ·
+      Generated ${generatedAt} — ${escapeHtml(report.method)}
+    </p>
     ${sectionsHtml}
     <div class="glass-panel rounded-lg p-6">
       <h3 class="text-sm font-bold mb-3">Full Report Text</h3>
-      <p class="text-xs text-on-surface-variant mb-3">This is exactly what would be forwarded to an LLM for deeper, qualitative analysis.</p>
+      <p class="text-xs text-on-surface-variant mb-3">This is exactly what gets forwarded to the local LLM for deeper, qualitative analysis.</p>
       <pre class="font-data-code text-xs whitespace-pre-wrap bg-deep-obsidian text-on-surface rounded p-4 max-h-72 overflow-y-auto border border-outline-variant">${escapeHtml(report.narrative)}</pre>
-      <div class="flex items-center gap-4 mt-4">
+      <div class="flex flex-wrap items-center gap-4 mt-4">
         <button class="flex items-center space-x-2 border border-electric-blue text-electric-blue font-bold px-4 py-2 rounded transition-transform active:scale-95 hover:bg-electric-blue hover:text-deep-obsidian" id="send-to-llm-btn" onclick="sendReportToLLM()">
           <span class="material-symbols-outlined text-sm">psychology</span>
           <span class="font-label-caps text-[10px]">SEND TO LLM →</span>
+        </button>
+        <button class="flex items-center space-x-2 border border-secondary text-secondary font-bold px-4 py-2 rounded transition-transform active:scale-95 hover:bg-secondary hover:text-deep-obsidian" id="correlate-news-btn" onclick="correlateWithNews()">
+          <span class="material-symbols-outlined text-sm">newspaper</span>
+          <span class="font-label-caps text-[10px]">CORRELATE WITH NEWS →</span>
         </button>
         <span class="text-xs text-on-surface-variant" id="send-to-llm-status"></span>
       </div>
@@ -716,7 +730,7 @@ async function loadReportHistory(selectedId) {
     }
     select.innerHTML = "";
     list.forEach((r) => {
-      select.appendChild(new Option(new Date(r.generated_at).toLocaleString(), r.id));
+      select.appendChild(new Option(`${new Date(r.generated_at).toLocaleString()} — ${r.location_label}`, r.id));
     });
     select.value = selectedId || list[0].id;
     select.classList.remove("hidden");
@@ -728,6 +742,7 @@ async function loadReportHistory(selectedId) {
 }
 
 async function showReports() {
+  await populateLocationOptions(document.getElementById("report-location-select"), currentReportLocation);
   const list = await loadReportHistory(currentReportId);
   if (!list.length) {
     document.getElementById("report-empty-state").classList.remove("hidden");
@@ -744,6 +759,10 @@ async function onReportHistoryChange() {
   renderReport(await api(`/api/reports/${encodeURIComponent(id)}`));
 }
 
+function onReportLocationChange() {
+  currentReportLocation = document.getElementById("report-location-select").value;
+}
+
 async function generateReport() {
   const buttons = [document.getElementById("generate-report-btn"), document.getElementById("generate-report-btn-inline")].filter(Boolean);
   const originalLabels = buttons.map((b) => b.querySelector("span:last-child").textContent);
@@ -753,7 +772,7 @@ async function generateReport() {
     b.querySelector("span:last-child").textContent = "ANALYZING…";
   });
   try {
-    const report = await api("/api/reports/generate", { method: "POST" });
+    const report = await api(`/api/reports/generate?location=${encodeURIComponent(currentReportLocation)}`, { method: "POST" });
     await loadReportHistory(report.id);
     renderReport(report);
     showView("reports");
@@ -775,6 +794,24 @@ async function sendReportToLLM() {
   statusEl.textContent = "Asking the local LLM… (can take a while the first time a model loads)";
   try {
     const { explanation } = await api(`/api/reports/${encodeURIComponent(currentReportId)}/send-to-llm`, { method: "POST" });
+    statusEl.textContent = "";
+    document.getElementById("chat-messages").innerHTML = "";
+    appendChatBubble("assistant", explanation);
+    openChatModal();
+  } catch (e) {
+    statusEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function correlateWithNews() {
+  const btn = document.getElementById("correlate-news-btn");
+  const statusEl = document.getElementById("send-to-llm-status");
+  btn.disabled = true;
+  statusEl.textContent = "Fetching local news and asking the local LLM to correlate it… (can take a while)";
+  try {
+    const { explanation } = await api(`/api/reports/${encodeURIComponent(currentReportId)}/correlate-news`, { method: "POST" });
     statusEl.textContent = "";
     document.getElementById("chat-messages").innerHTML = "";
     appendChatBubble("assistant", explanation);

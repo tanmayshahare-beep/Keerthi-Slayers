@@ -276,6 +276,7 @@
         <h2 class="text-xl font-bold whitespace-nowrap">Insights Reports</h2>
         <div class="flex items-center space-x-3">
           <select class="hidden field-input rounded px-3 py-1.5 text-xs max-w-[220px]" id="report-history-select" onchange="onReportHistoryChange()"></select>
+          <select class="field-input rounded px-3 py-1.5 text-xs" id="report-location-select" onchange="onReportLocationChange()"></select>
           <button class="flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2 rounded transition-transform active:scale-95" id="generate-report-btn-inline" onclick="generateReport()">
             <span class="material-symbols-outlined text-sm">summarize</span>
             <span class="font-label-caps text-[10px]">GENERATE NEW REPORT</span>
@@ -283,7 +284,7 @@
         </div>
       </div>
       <p class="text-sm text-on-surface-variant mb-6">
-        Classical statistics only — Pareto/ABC analysis, a least-squares revenue trend line, day-of-week seasonality, and a Herfindahl-Hirschman concentration index. No LLM is used to produce this.
+        Classical statistics only — Pareto/ABC analysis, a least-squares revenue trend line, day-of-week seasonality, and a Herfindahl-Hirschman concentration index. No LLM is used to produce this. Pick a location above, then generate.
       </p>
 
       <div class="glass-panel rounded-lg p-8 text-center text-sm text-on-surface-variant" id="report-empty-state">
