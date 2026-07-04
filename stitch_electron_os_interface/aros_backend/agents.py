@@ -230,16 +230,21 @@ def build_news_correlation_messages(report_narrative: str, articles: list[dict],
     ]
 
 
-def build_engine_messages(engine_name: str, plan: dict, prior_context: str, real_data_narrative: str | None) -> list[dict]:
+def build_engine_messages(engine_name: str, plan: dict, prior_context: str, real_data_narrative: str | None, engine_budget: dict) -> list[dict]:
     """One step of the plan pipeline (see plans.py). prior_context is every
     earlier engine's narrative, already labeled and joined - empty string
-    for the first engine in the sequence."""
+    for the first engine in the sequence. engine_budget is this engine's own
+    {"amount", "pct"} share of the plan's total (plans.ENGINE_BUDGET_WEIGHTS)
+    - agents are told to work within that share specifically, not the total,
+    so they stop each independently claiming the whole budget."""
     agent = get_agent(engine_name)
 
     header = (
         f"Business goal: {plan['goal']}\n"
         f"Timeframe: {plan['timeframe']}\n"
-        f"Budget: {plan['currency']}{plan['budget']:,.2f}\n"
+        f"Total plan budget: {plan['currency']}{plan['budget']:,.2f}\n"
+        f"Your allocated share: {plan['currency']}{engine_budget['amount']:,.2f} ({engine_budget['pct']}% of the total) - "
+        f"base your recommendations on THIS amount, not the total plan budget.\n"
         f"Location: {plan['location_label']}"
     )
 
@@ -261,10 +266,15 @@ def build_plan_chat_seed_messages(plan: dict) -> list[dict]:
     context. The greeting is a canned line, not a real model call - there's
     nothing data-bearing in it, so it's not worth the extra latency."""
     agent = get_agent("plan_advisor")
+    budget_lines = "\n".join(
+        f"  - {plan['engines'][name]['display_name'] if name in plan['engines'] else name}: "
+        f"{plan['currency']}{alloc['amount']:,.2f} ({alloc['pct']}%)"
+        for name, alloc in plan.get("budget_allocation", {}).items()
+    )
     header = (
         f"Business goal: {plan['goal']}\n"
         f"Timeframe: {plan['timeframe']}\n"
-        f"Budget: {plan['currency']}{plan['budget']:,.2f}\n"
+        f"Total budget: {plan['currency']}{plan['budget']:,.2f}, split across engines as:\n{budget_lines}\n"
         f"Location: {plan['location_label']}"
     )
     engine_sections = "\n\n".join(

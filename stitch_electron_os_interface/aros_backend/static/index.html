@@ -48,6 +48,17 @@
   }
   .field-input:focus { outline: none; border-color: #00F0FF; }
   .light .field-input { background: #F8F9FA; border-color: rgba(0,0,0,0.1); color: #1A1A1E; }
+
+  /* Export PDF uses Electron's webContents.printToPDF() on whatever view is
+     currently active (see app.js exportCurrentViewToPdf) - these rules hide
+     interactive-only chrome (nav, buttons, dropdowns) that doesn't mean
+     anything on a static page, and keep the app's own dark theme in the
+     output since Chromium's print engine strips backgrounds by default. */
+  @media print {
+    aside, .no-print { display: none !important; }
+    main { margin-left: 0 !important; }
+    html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
 </style>
 <script id="tailwind-config">
     tailwind.config = {
@@ -148,7 +159,7 @@
   </aside>
 
   <!-- Always-visible quick action, regardless of which view is active -->
-  <button class="fixed top-6 right-6 z-40 flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2.5 rounded-lg shadow-lg transition-transform active:scale-95 hover:scale-105" id="generate-report-btn" onclick="generateReport()" title="Run a classical (non-LLM) data analysis and save it as a report">
+  <button class="no-print fixed top-6 right-6 z-40 flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2.5 rounded-lg shadow-lg transition-transform active:scale-95 hover:scale-105" id="generate-report-btn" onclick="generateReport()" title="Run a classical (non-LLM) data analysis and save it as a report">
     <span class="material-symbols-outlined text-lg">summarize</span>
     <span class="font-label-caps text-[10px]">GENERATE REPORT</span>
   </button>
@@ -159,11 +170,15 @@
     <section data-view="insights">
       <div class="flex items-center justify-between mb-4 gap-4">
         <h2 class="text-xl font-bold whitespace-nowrap">Insights</h2>
-        <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-3 no-print">
           <select class="hidden field-input rounded px-3 py-1.5 text-xs" id="location-select" onchange="onLocationChange()"></select>
           <button class="flex items-center space-x-2 font-label-caps text-[10px] text-on-surface-variant hover:text-electric-blue border border-outline-variant hover:border-electric-blue rounded px-3 py-1.5 transition-colors" id="refresh-insights-btn" onclick="refreshInsights()">
             <span class="material-symbols-outlined text-sm">refresh</span>
             <span>REFRESH</span>
+          </button>
+          <button class="flex items-center space-x-2 font-label-caps text-[10px] text-on-surface-variant hover:text-electric-blue border border-outline-variant hover:border-electric-blue rounded px-3 py-1.5 transition-colors" onclick="exportCurrentViewToPdf('aros-insights.pdf')">
+            <span class="material-symbols-outlined text-sm">picture_as_pdf</span>
+            <span>EXPORT PDF</span>
           </button>
         </div>
       </div>
@@ -195,7 +210,7 @@
       <div class="mb-6">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-label-caps text-[10px] text-on-surface-variant tracking-wide">BUSINESS SCORECARD</h3>
-          <button class="flex items-center space-x-2 border border-secondary text-secondary hover:bg-secondary hover:text-deep-obsidian font-bold px-3 py-1.5 rounded transition-colors" id="ai-scorecard-btn" onclick="generateAiScorecard()">
+          <button class="no-print flex items-center space-x-2 border border-secondary text-secondary hover:bg-secondary hover:text-deep-obsidian font-bold px-3 py-1.5 rounded transition-colors" id="ai-scorecard-btn" onclick="generateAiScorecard()">
             <span class="material-symbols-outlined text-sm">auto_awesome</span>
             <span class="font-label-caps text-[10px]">GENERATE AI INSIGHTS</span>
           </button>
@@ -292,7 +307,7 @@
     <section data-view="reports">
       <div class="flex items-center justify-between mb-1 gap-4">
         <h2 class="text-xl font-bold whitespace-nowrap">Insights Reports</h2>
-        <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-3 no-print">
           <select class="hidden field-input rounded px-3 py-1.5 text-xs max-w-[220px]" id="report-history-select" onchange="onReportHistoryChange()"></select>
           <select class="field-input rounded px-3 py-1.5 text-xs" id="report-location-select" onchange="onReportLocationChange()"></select>
           <button class="flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2 rounded transition-transform active:scale-95" id="generate-report-btn-inline" onclick="generateReport()">
@@ -316,8 +331,12 @@
     <section data-view="plan">
       <div class="flex items-center justify-between mb-1 gap-4">
         <h2 class="text-xl font-bold whitespace-nowrap">Business Plan</h2>
-        <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-3 no-print">
           <select class="hidden field-input rounded px-3 py-1.5 text-xs max-w-[260px]" id="plan-history-select" onchange="onPlanHistoryChange()"></select>
+          <button class="flex items-center space-x-2 border border-outline-variant hover:border-electric-blue text-on-surface-variant hover:text-electric-blue font-bold px-4 py-2 rounded transition-colors" id="plan-export-pdf-btn" onclick="exportCurrentViewToPdf('aros-plan.pdf')">
+            <span class="material-symbols-outlined text-sm">picture_as_pdf</span>
+            <span class="font-label-caps text-[10px]">EXPORT PDF</span>
+          </button>
           <button class="flex items-center space-x-2 border border-outline-variant hover:border-electric-blue text-on-surface-variant hover:text-electric-blue font-bold px-4 py-2 rounded transition-colors" onclick="startNewPlan()">
             <span class="material-symbols-outlined text-sm">add</span>
             <span class="font-label-caps text-[10px]">NEW PLAN</span>
@@ -330,12 +349,12 @@
 
       <!-- Guided intake -->
       <div id="plan-intake">
-        <div class="mb-4 max-w-xs">
+        <div class="no-print mb-4 max-w-xs">
           <label class="font-label-caps text-[10px] text-on-surface-variant block mb-1">LOCATION</label>
           <select class="field-input rounded px-3 py-1.5 text-xs w-full" id="plan-location-select" onchange="onPlanLocationChange()"></select>
         </div>
         <div class="space-y-3 mb-4" id="plan-intake-messages"></div>
-        <div id="plan-intake-controls"></div>
+        <div class="no-print" id="plan-intake-controls"></div>
       </div>
 
       <!-- Pipeline (shown once intake is finalized) -->
@@ -343,7 +362,7 @@
         <div class="glass-panel rounded-lg p-4 mb-6" id="plan-summary-card"></div>
         <div class="glass-panel rounded-lg p-4 mb-6 space-y-2" id="plan-engine-progress"></div>
         <div id="plan-engine-sections"></div>
-        <div class="hidden glass-panel rounded-lg p-6 mt-2 text-center" id="plan-chat-entry">
+        <div class="no-print hidden glass-panel rounded-lg p-6 mt-2 text-center" id="plan-chat-entry">
           <button class="flex items-center space-x-2 bg-electric-blue text-deep-obsidian font-bold px-4 py-2.5 rounded transition-transform active:scale-95 mx-auto" onclick="openPlanChat()">
             <span class="material-symbols-outlined text-sm">forum</span>
             <span class="font-label-caps text-[10px]">ASK ABOUT THIS PLAN →</span>

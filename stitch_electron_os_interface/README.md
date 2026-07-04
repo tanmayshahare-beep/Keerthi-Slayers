@@ -144,3 +144,21 @@ python3 -m uvicorn app:app --reload
 ```
 
 Then open `http://127.0.0.1:8000` in a browser.
+
+## Tests
+
+```
+cd electron
+npm test
+```
+
+Launches the real Electron app (Playwright, not a mock) and drives it
+through account setup, the category wizard, Insights, the Business
+Scorecard, Reports, and the Plan intake - everything that doesn't require
+Ollama. **This wipes `aros_backend/aros_app.db`, `reports/`, `plans/`, and
+`ai_scorecards/`** before and after running, since account setup fails
+against an existing user - only run it against a dev checkout, never
+against real data. Features that call the local LLM (report chat, news
+correlation, the plan pipeline, the AI scorecard) are checked by hand
+instead - see `electron/tests/full_pipeline.md` for that checklist and why
+it isn't automated.

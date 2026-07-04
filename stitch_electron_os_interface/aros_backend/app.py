@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import agents
+import ai_scorecards
 import app_db
 import auth
 import categories_template
@@ -148,25 +149,30 @@ def location_insights(location: str = "all", _user: str = Depends(auth.require_s
     }
 
 
+@app.get("/api/scorecard/ai")
+def scorecard_ai_get(location: str = "main", _user: str = Depends(auth.require_session)):
+    """Returns whatever AI scorecard was last generated for this location,
+    if any - lets the UI show it immediately on load instead of always
+    starting from a blank "click to generate" state."""
+    cached = ai_scorecards.get_cached(location)
+    if cached is None:
+        raise HTTPException(status_code=404, detail="No AI scorecard generated yet for this location.")
+    return cached
+
+
 @app.post("/api/scorecard/ai")
-def scorecard_ai(location: str = "main", _user: str = Depends(auth.require_session)):
+def scorecard_ai_generate(location: str = "main", _user: str = Depends(auth.require_session)):
     """The four qualitative scorecard fields (Lead Score, Market Readiness,
     AI Recommendations, Executive Summary) that classical stats alone can't
     produce - scorecard_advisor (agents.py) estimates them from the same
     real numbers the dashboard already shows, on demand rather than on
-    every page load."""
-    section = reports.main_store_section() if location == "main" else reports.tn_network_section(location)
-    if section is None:
-        raise HTTPException(status_code=409, detail="No sales data available for this location.")
-
-    scorecard = section["analysis"]["scorecard"]
-    messages = agents.build_scorecard_messages(section["narrative"], scorecard, section["title"], section["currency"])
+    every page load. Overwrites this location's previously cached result."""
     try:
-        reply = ollama_client.chat(messages, num_predict=600)
+        return ai_scorecards.generate(location)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ollama_client.OllamaUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e))
-
-    return agents.split_scorecard_response(reply)
 
 
 def _news_label_for(location: str) -> str | None:

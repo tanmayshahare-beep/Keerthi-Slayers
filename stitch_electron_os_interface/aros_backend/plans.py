@@ -33,6 +33,30 @@ ENGINE_ORDER = [
     "customer_success_engine",
 ]
 
+# A suggested starting split of the plan's total budget across the six
+# engines - a documented judgment call (typical small-retail marketing/ops
+# weighting: campaigns and lead gen get the largest shares, strategy and
+# analytics the smallest), not something derived from the business's own
+# data. Giving each engine its own real share - instead of the full total -
+# stops agents from independently inventing conflicting numbers against the
+# same budget, which happened in testing (two engines both claiming the
+# entire amount).
+ENGINE_BUDGET_WEIGHTS = {
+    "strategy_engine": 0.05,
+    "marketing_engine": 0.30,
+    "leadgen_engine": 0.25,
+    "sales_engine": 0.15,
+    "analytics_engine": 0.10,
+    "customer_success_engine": 0.15,
+}
+
+
+def engine_budget_allocations(total_budget: float) -> dict:
+    return {
+        name: {"amount": round(total_budget * weight, 2), "pct": round(weight * 100)}
+        for name, weight in ENGINE_BUDGET_WEIGHTS.items()
+    }
+
 
 def _ensure_dir():
     os.makedirs(PLANS_DIR, exist_ok=True)
@@ -62,6 +86,7 @@ def create_plan(location: str, goal: str, timeframe: str, budget: float) -> dict
         "goal": goal,
         "timeframe": timeframe,
         "budget": budget,
+        "budget_allocation": engine_budget_allocations(budget),
         "engine_order": ENGINE_ORDER,
         "engines": {},  # engine_name -> {display_name, narrative, real_data?}
     }
@@ -200,7 +225,10 @@ def run_engine(plan_id: str, engine_name: str) -> dict:
             raise PermissionError(f"Run {earlier} before {engine_name} - this pipeline is sequential.")
 
     real_data = _real_data_for(engine_name, plan)
-    messages = agents.build_engine_messages(engine_name, plan, _prior_context(plan), _real_data_narrative(real_data))
+    # .get() covers plans saved before budget_allocation existed - recompute
+    # rather than fail on an old file still sitting on disk.
+    engine_budget = plan.get("budget_allocation", {}).get(engine_name) or engine_budget_allocations(plan["budget"])[engine_name]
+    messages = agents.build_engine_messages(engine_name, plan, _prior_context(plan), _real_data_narrative(real_data), engine_budget)
     reply = ollama_client.chat(messages, num_predict=500)
 
     entry = {"display_name": agents.get_agent(engine_name)["display_name"], "narrative": reply}

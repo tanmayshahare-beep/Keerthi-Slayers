@@ -1,5 +1,6 @@
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, shell, ipcMain } = require("electron");
 const { spawn } = require("child_process");
+const fs = require("fs");
 const http = require("http");
 const path = require("path");
 
@@ -59,6 +60,9 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 900,
     height: 720,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+    },
   });
 
   // News tab links (target="_blank") should open in the user's normal
@@ -71,6 +75,28 @@ async function createWindow() {
 
   win.loadURL(BACKEND_URL);
 }
+
+// The renderer can't touch the filesystem or a save dialog directly
+// (contextIsolation is on) - it asks for this via preload.js's
+// window.electronAPI.exportPdf(), we do the actual saving here.
+ipcMain.handle("export-pdf", async (event, options = {}) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: "Export as PDF",
+    defaultPath: options.defaultFileName || "aros-export.pdf",
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (canceled || !filePath) {
+    return { success: false, canceled: true };
+  }
+  try {
+    const pdfBuffer = await win.webContents.printToPDF({ printBackground: true });
+    fs.writeFileSync(filePath, pdfBuffer);
+    return { success: true, filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 app.whenReady().then(createWindow);
 

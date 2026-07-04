@@ -5,3 +5,4 @@ __pycache__/
 node_modules/
 aros_backend/reports/
 aros_backend/plans/
+aros_backend/ai_scorecards/

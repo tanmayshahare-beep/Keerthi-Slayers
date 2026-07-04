@@ -421,9 +421,57 @@ function renderScorecard(scorecard, currency) {
     })
     .join("");
 
-  // Clear stale AI content from whatever location/report was showing before.
+  // Clear stale AI content from whatever location/report was showing before -
+  // loadCachedAiScorecard (called right after this by showInsights/
+  // showLocationInsights) repopulates it for the newly selected location.
   document.getElementById("ai-scorecard-content").innerHTML = "";
   document.getElementById("ai-scorecard-status").classList.add("hidden");
+  setAiScorecardButtonLabel(false);
+}
+
+function setAiScorecardButtonLabel(hasCached) {
+  document.getElementById("ai-scorecard-btn").querySelector("span:last-child").textContent = hasCached ? "REGENERATE AI INSIGHTS" : "GENERATE AI INSIGHTS";
+}
+
+function renderAiScorecardSections(sections, generatedAt) {
+  const contentEl = document.getElementById("ai-scorecard-content");
+  const generatedNote = generatedAt
+    ? `<p class="text-[10px] text-on-surface-variant mb-3">Generated ${new Date(generatedAt).toLocaleString()}</p>`
+    : "";
+  contentEl.innerHTML = `
+    ${generatedNote}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <div class="glass-panel rounded-lg p-4">
+        <h4 class="font-label-caps text-[10px] text-secondary mb-2">LEAD SCORE (AI ESTIMATE)</h4>
+        <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Lead Score"])}</p>
+      </div>
+      <div class="glass-panel rounded-lg p-4">
+        <h4 class="font-label-caps text-[10px] text-secondary mb-2">MARKET READINESS (AI ESTIMATE)</h4>
+        <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Market Readiness"])}</p>
+      </div>
+    </div>
+    <div class="glass-panel rounded-lg p-4 mb-4">
+      <h4 class="font-label-caps text-[10px] text-electric-blue mb-2">AI RECOMMENDATIONS</h4>
+      <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["AI Recommendations"])}</p>
+    </div>
+    <div class="glass-panel rounded-lg p-4">
+      <h4 class="font-label-caps text-[10px] text-electric-blue mb-2">EXECUTIVE SUMMARY</h4>
+      <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Executive Summary"])}</p>
+    </div>
+  `;
+  setAiScorecardButtonLabel(true);
+}
+
+// Called right after renderScorecard() for whichever location just loaded -
+// shows the last AI read for that location immediately if one exists,
+// rather than always starting from a blank "click to generate" state.
+async function loadCachedAiScorecard(location) {
+  try {
+    const cached = await api(`/api/scorecard/ai?location=${encodeURIComponent(location)}`);
+    renderAiScorecardSections(cached.sections, cached.generated_at);
+  } catch (e) {
+    setAiScorecardButtonLabel(false);
+  }
 }
 
 async function generateAiScorecard() {
@@ -436,28 +484,9 @@ async function generateAiScorecard() {
   contentEl.innerHTML = "";
 
   try {
-    const sections = await api(`/api/scorecard/ai?location=${encodeURIComponent(currentLocation)}`, { method: "POST" });
+    const result = await api(`/api/scorecard/ai?location=${encodeURIComponent(currentLocation)}`, { method: "POST" });
     statusEl.classList.add("hidden");
-    contentEl.innerHTML = `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div class="glass-panel rounded-lg p-4">
-          <h4 class="font-label-caps text-[10px] text-secondary mb-2">LEAD SCORE (AI ESTIMATE)</h4>
-          <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Lead Score"])}</p>
-        </div>
-        <div class="glass-panel rounded-lg p-4">
-          <h4 class="font-label-caps text-[10px] text-secondary mb-2">MARKET READINESS (AI ESTIMATE)</h4>
-          <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Market Readiness"])}</p>
-        </div>
-      </div>
-      <div class="glass-panel rounded-lg p-4 mb-4">
-        <h4 class="font-label-caps text-[10px] text-electric-blue mb-2">AI RECOMMENDATIONS</h4>
-        <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["AI Recommendations"])}</p>
-      </div>
-      <div class="glass-panel rounded-lg p-4">
-        <h4 class="font-label-caps text-[10px] text-electric-blue mb-2">EXECUTIVE SUMMARY</h4>
-        <p class="text-sm text-on-surface whitespace-pre-wrap leading-relaxed">${escapeHtml(sections["Executive Summary"])}</p>
-      </div>
-    `;
+    renderAiScorecardSections(result.sections, result.generated_at);
   } catch (e) {
     statusEl.classList.add("text-data-negative");
     statusEl.textContent = e.message;
@@ -480,6 +509,7 @@ async function showInsights() {
   cachedProducts = products;
   cachedPareto = pareto;
   renderScorecard(scorecard, "$");
+  loadCachedAiScorecard("main");
 
   const totalRevenue = pareto.by_product.reduce((sum, r) => sum + r.revenue, 0);
   document.getElementById("kpi-revenue").textContent = `$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -583,6 +613,7 @@ async function showLocationInsights(location) {
   const { stats, pareto, trend_shifts, scorecard } = await api(`/api/location-insights?location=${encodeURIComponent(location)}`);
   cachedPareto = pareto;
   renderScorecard(scorecard, "₹");
+  loadCachedAiScorecard(location);
 
   document.getElementById("kpi-revenue").textContent = `₹${stats.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   document.getElementById("kpi-products").textContent = stats.products_tracked;
@@ -818,7 +849,7 @@ function renderReport(report) {
       <h3 class="text-sm font-bold mb-3">Full Report Text</h3>
       <p class="text-xs text-on-surface-variant mb-3">This is exactly what gets forwarded to the local LLM for deeper, qualitative analysis.</p>
       <pre class="font-data-code text-xs whitespace-pre-wrap bg-deep-obsidian text-on-surface rounded p-4 max-h-72 overflow-y-auto border border-outline-variant">${escapeHtml(report.narrative)}</pre>
-      <div class="flex flex-wrap items-center gap-4 mt-4">
+      <div class="flex flex-wrap items-center gap-4 mt-4 no-print">
         <button class="flex items-center space-x-2 border border-electric-blue text-electric-blue font-bold px-4 py-2 rounded transition-transform active:scale-95 hover:bg-electric-blue hover:text-deep-obsidian" id="send-to-llm-btn" onclick="sendReportToLLM()">
           <span class="material-symbols-outlined text-sm">psychology</span>
           <span class="font-label-caps text-[10px]">SEND TO LLM →</span>
@@ -826,6 +857,10 @@ function renderReport(report) {
         <button class="flex items-center space-x-2 border border-secondary text-secondary font-bold px-4 py-2 rounded transition-transform active:scale-95 hover:bg-secondary hover:text-deep-obsidian" id="correlate-news-btn" onclick="correlateWithNews()">
           <span class="material-symbols-outlined text-sm">newspaper</span>
           <span class="font-label-caps text-[10px]">CORRELATE WITH NEWS →</span>
+        </button>
+        <button class="flex items-center space-x-2 border border-outline-variant hover:border-electric-blue text-on-surface-variant hover:text-electric-blue font-bold px-4 py-2 rounded transition-colors" onclick="exportCurrentViewToPdf('aros-report.pdf')">
+          <span class="material-symbols-outlined text-sm">picture_as_pdf</span>
+          <span class="font-label-caps text-[10px]">EXPORT PDF</span>
         </button>
         <span class="text-xs text-on-surface-variant" id="send-to-llm-status"></span>
       </div>
@@ -1167,6 +1202,24 @@ function showPlanPipeline(plan) {
   document.getElementById("plan-intake").classList.add("hidden");
   document.getElementById("plan-pipeline").classList.remove("hidden");
 
+  const budgetBreakdown = plan.budget_allocation
+    ? `
+      <div class="mt-4 pt-4 border-t border-outline-variant">
+        <span class="font-label-caps text-[10px] text-on-surface-variant block mb-2">BUDGET SPLIT ACROSS ENGINES (suggested starting allocation)</span>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+          ${ENGINE_STEPS.map((eng) => {
+            const alloc = plan.budget_allocation[eng.key];
+            if (!alloc) return "";
+            return `<div class="flex items-center justify-between text-xs bg-surface-variant/20 rounded px-3 py-2">
+              <span class="text-on-surface-variant">${escapeHtml(eng.label)}</span>
+              <span class="font-bold">${plan.currency}${alloc.amount.toLocaleString()} <span class="text-on-surface-variant">(${alloc.pct}%)</span></span>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
+    `
+    : "";
+
   document.getElementById("plan-summary-card").innerHTML = `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       <div><span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">GOAL</span><span class="text-sm font-bold">${escapeHtml(plan.goal)}</span></div>
@@ -1174,6 +1227,7 @@ function showPlanPipeline(plan) {
       <div><span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">BUDGET</span><span class="text-sm font-bold">${plan.currency}${Number(plan.budget).toLocaleString()}</span></div>
       <div><span class="font-label-caps text-[10px] text-on-surface-variant block mb-1">LOCATION</span><span class="text-sm font-bold text-electric-blue">${escapeHtml(plan.location_label)}</span></div>
     </div>
+    ${budgetBreakdown}
   `;
 
   document.getElementById("plan-engine-progress").innerHTML = ENGINE_STEPS
@@ -1361,6 +1415,28 @@ function openPlanChat() {
   document.getElementById("chat-messages").innerHTML = "";
   appendChatBubble("assistant", "Got it — I've reviewed your full plan. What would you like to know?");
   openChatModal();
+}
+
+// ---------- PDF export ----------
+// Electron's built-in webContents.printToPDF (main.js, via preload.js's
+// window.electronAPI) captures whatever's currently on screen - the
+// @media print rules in index.html hide nav/buttons/dropdowns first so the
+// output is just the content. Only available inside the Electron shell,
+// not when running the backend standalone in a browser.
+
+async function exportCurrentViewToPdf(defaultFileName) {
+  if (!window.electronAPI || !window.electronAPI.exportPdf) {
+    alert("PDF export is only available in the AROS desktop app.");
+    return;
+  }
+  try {
+    const result = await window.electronAPI.exportPdf({ defaultFileName });
+    if (!result.success && !result.canceled) {
+      alert(`Couldn't export PDF: ${result.error || "unknown error"}`);
+    }
+  } catch (e) {
+    alert(`Couldn't export PDF: ${e.message}`);
+  }
 }
 
 // ---------- theme toggle ----------
