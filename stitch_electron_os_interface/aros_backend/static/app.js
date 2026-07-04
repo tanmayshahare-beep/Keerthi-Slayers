@@ -122,10 +122,17 @@ async function openWizard() {
 
   let assignments;
   if (existing && existing.assignments && Object.keys(existing.assignments).length) {
-    assignments = existing.assignments;
+    assignments = { ...existing.assignments };
   } else {
     assignments = (await api("/api/categories/template")).assignments;
   }
+
+  // Products added to pos_system.db after categories were last saved have no
+  // assignment yet — surface them in an "Uncategorized" group instead of
+  // silently dropping them from the wizard (and from by-category insights).
+  products.forEach((p) => {
+    if (!(p.barcode in assignments)) assignments[p.barcode] = "Uncategorized";
+  });
 
   const byCategory = {};
   for (const [barcode, category] of Object.entries(assignments)) {
@@ -306,6 +313,17 @@ async function showInsights() {
   document.getElementById("kpi-stockouts").textContent = products.filter((p) => p.stock === 0).length;
   document.getElementById("kpi-categories").textContent = new Set(Object.values(categories.assignments)).size;
 
+  const uncategorizedCount = products.filter((p) => !(p.barcode in categories.assignments)).length;
+  const warningEl = document.getElementById("uncategorized-warning");
+  if (uncategorizedCount > 0) {
+    const plural = uncategorizedCount > 1;
+    document.getElementById("uncategorized-warning-text").textContent =
+      `⚠ ${uncategorizedCount} product${plural ? "s" : ""} ${plural ? "have" : "has"} no category assigned — excluded from the by-category breakdown below.`;
+    warningEl.classList.remove("hidden");
+  } else {
+    warningEl.classList.add("hidden");
+  }
+
   renderCategoryParetoTable(pareto.by_category);
   document.getElementById("product-filter").value = "";
   renderProductTable();
@@ -316,6 +334,24 @@ async function showInsights() {
   renderTrendTable("trend-product-table", trend_shifts.by_product);
 
   showView("insights");
+}
+
+async function refreshInsights() {
+  const btn = document.getElementById("refresh-insights-btn");
+  const label = btn.querySelector("span:last-child");
+  const originalText = label.textContent;
+  btn.disabled = true;
+  btn.classList.add("opacity-50", "cursor-not-allowed");
+  label.textContent = "REFRESHING…";
+  try {
+    await showInsights();
+  } catch (e) {
+    label.textContent = "REFRESH FAILED";
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("opacity-50", "cursor-not-allowed");
+    setTimeout(() => { label.textContent = originalText; }, 1000);
+  }
 }
 
 // ---------- theme toggle ----------

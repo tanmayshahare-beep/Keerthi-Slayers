@@ -53,10 +53,12 @@ def login(credentials: Credentials):
     if not user:
         raise HTTPException(status_code=404, detail="No user set up yet")
     _id, username, password_hash, salt = user
-    if username != credentials.username or not auth.verify_password(
-        credentials.password, salt, password_hash
-    ):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+    # Match setup()'s username.strip() so a stray leading/trailing space
+    # (autofill, a stray keystroke) doesn't silently fail the username check.
+    if username != credentials.username.strip():
+        raise HTTPException(status_code=401, detail=f'No account found with username "{credentials.username.strip()}".')
+    if not auth.verify_password(credentials.password, salt, password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect password.")
     token = auth.issue_session(username)
     return {"token": token}
 

@@ -101,18 +101,18 @@
     <div data-auth-mode="setup">
       <p class="text-sm text-on-surface-variant mb-4">Create a local account to access this store's data. Nothing leaves this machine.</p>
       <label class="font-label-caps text-[10px] text-on-surface-variant block mb-1">USERNAME</label>
-      <input class="field-input w-full rounded px-3 py-2 text-sm mb-3" id="setup-username" type="text"/>
+      <input autocomplete="off" class="field-input w-full rounded px-3 py-2 text-sm mb-3" id="setup-username" type="text"/>
       <label class="font-label-caps text-[10px] text-on-surface-variant block mb-1">PASSWORD</label>
-      <input class="field-input w-full rounded px-3 py-2 text-sm mb-4" id="setup-password" type="password"/>
+      <input autocomplete="off" class="field-input w-full rounded px-3 py-2 text-sm mb-4" id="setup-password" type="password"/>
       <button class="w-full bg-electric-blue text-deep-obsidian font-bold py-2.5 rounded transition-transform active:scale-95" onclick="doSetup()">CREATE ACCOUNT</button>
       <div class="text-data-negative text-xs mt-3" id="setup-error"></div>
     </div>
 
     <div class="hidden" data-auth-mode="login">
       <label class="font-label-caps text-[10px] text-on-surface-variant block mb-1">USERNAME</label>
-      <input class="field-input w-full rounded px-3 py-2 text-sm mb-3" id="login-username" type="text"/>
+      <input autocomplete="off" class="field-input w-full rounded px-3 py-2 text-sm mb-3" id="login-username" type="text"/>
       <label class="font-label-caps text-[10px] text-on-surface-variant block mb-1">PASSWORD</label>
-      <input class="field-input w-full rounded px-3 py-2 text-sm mb-4" id="login-password" type="password"/>
+      <input autocomplete="off" class="field-input w-full rounded px-3 py-2 text-sm mb-4" id="login-password" type="password"/>
       <button class="w-full bg-electric-blue text-deep-obsidian font-bold py-2.5 rounded transition-transform active:scale-95" onclick="doLogin()">LOG IN</button>
       <div class="text-data-negative text-xs mt-3" id="login-error"></div>
     </div>
@@ -158,7 +158,18 @@
 
     <!-- INSIGHTS VIEW -->
     <section data-view="insights">
-      <h2 class="text-xl font-bold mb-4">Insights</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">Insights</h2>
+        <button class="flex items-center space-x-2 font-label-caps text-[10px] text-on-surface-variant hover:text-electric-blue border border-outline-variant hover:border-electric-blue rounded px-3 py-1.5 transition-colors" id="refresh-insights-btn" onclick="refreshInsights()">
+          <span class="material-symbols-outlined text-sm">refresh</span>
+          <span>REFRESH</span>
+        </button>
+      </div>
+
+      <div class="hidden glass-panel border border-data-negative/40 rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-4" id="uncategorized-warning">
+        <span class="text-sm text-data-negative" id="uncategorized-warning-text"></span>
+        <button class="font-label-caps text-[10px] text-electric-blue hover:underline whitespace-nowrap" onclick="openWizard()">EDIT CATEGORIES</button>
+      </div>
 
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="glass-panel p-4 rounded-lg">
