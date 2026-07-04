@@ -1,0 +1,99 @@
+Here is your **AROS Desktop App Playbook**. This is the local Electron app that
+turns your real `pos-system/pos_system.db` sales data into an Insights
+dashboard (top/bottom performers, trend shifts). Everything runs on this one
+machine — nothing is sent anywhere.
+
+---
+
+### Step 1: One-Time Setup
+
+1. Make sure you have **Python 3.10+** and **Node.js 18+** installed.
+   ```cmd
+   python --version
+   node --version
+   ```
+2. Install the backend's Python dependencies:
+   ```cmd
+   cd "C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System\stitch_electron_os_interface\aros_backend"
+   pip install -r requirements.txt
+   ```
+3. Make sure `pos-system/pos_system.db` actually has data in it. If it's a
+   fresh/empty database, seed it first:
+   ```cmd
+   cd "C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System\pos-system"
+   python -c "from database import POSDatabase; POSDatabase()"
+   python seed_data.py
+   ```
+4. Install the Electron app's dependencies:
+   ```cmd
+   cd "C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System\stitch_electron_os_interface\electron"
+   npm install
+   ```
+   This downloads Electron itself — it can take a few minutes the first time.
+
+---
+
+### Step 2: Run the App
+
+```cmd
+cd "C:\All projects\Hackathon dindigul\Open-Source-Point-of-Sale-System\stitch_electron_os_interface\electron"
+npm start
+```
+
+This does two things automatically:
+- Spawns the Python backend (`aros_backend/app.py`) on `127.0.0.1:8000`.
+- Opens an Electron window pointed at it.
+
+**Keep the window open** — closing it also shuts down the backend process
+running behind it.
+
+---
+
+### Step 3: First-Run Walkthrough
+
+1. **Create account** — the very first launch shows a "Create a local
+   account" screen. Pick any username/password; it's stored only in
+   `aros_backend/aros_app.db` on this machine (PBKDF2-hashed).
+2. **Define your categories** — you'll see your real 25 products already
+   grouped into 3 suggested categories (Produce & Bakery, Dairy/Meat & Deli,
+   Pantry & Household). You can:
+   - Rename a group by editing its title field.
+   - Move any product into a different group (or a brand-new one) using the
+     dropdown next to it.
+   Click **CONFIRM CATEGORIES** when done.
+3. **Insights dashboard** — you land here automatically. It shows real
+   numbers computed from `pos_system.db`: total revenue, stockouts, a
+   Pareto (80/20) breakdown of which categories/products drive revenue, and
+   week-over-week trend shifts. Use the filter box to search products, and
+   the switch in the sidebar to toggle light/dark mode.
+4. Next time you run `npm start`, you'll go straight to the login screen —
+   your account and categories are remembered.
+
+---
+
+### Troubleshooting
+
+| Symptom | Likely cause |
+| :--- | :--- |
+| `AROS backend unavailable` error dialog on launch | Python dependencies missing — re-run Step 1.2, or check `pip` is on PATH |
+| Blank/white window that never loads | The Python backend crashed on start — run `python -m uvicorn app:app` directly from `aros_backend/` to see the real error in the terminal |
+| `FileNotFoundError: ...pos_system.db not found` | `pos-system/pos_system.db` doesn't exist yet — run Step 1.3 |
+| Wizard shows 0 products | `pos_system.db` exists but is empty — run `python seed_data.py` from `pos-system/` |
+| Forgot your local password | Delete `aros_backend/aros_app.db` and restart the app — you'll be prompted to create a new account (this does **not** touch your real sales data) |
+
+---
+
+### Summary Checklist
+
+| Task | Status |
+| :--- | :--- |
+| ✅ Python 3.10+ and Node.js 18+ installed | ⬜ |
+| ✅ `pip install -r aros_backend/requirements.txt` | ⬜ |
+| ✅ `pos-system/pos_system.db` has real data | ⬜ |
+| ✅ `npm install` inside `electron/` | ⬜ |
+| ✅ `npm start` opens the AROS window | ⬜ |
+| ✅ Created a local account and confirmed categories | ⬜ |
+| ✅ Insights dashboard shows real revenue/trend numbers | ⬜ |
+
+**You're live.** The app only ever reads `pos-system/pos_system.db` — it
+never writes to it — so it's safe to run alongside the POS app itself.
