@@ -1,0 +1,32 @@
+# Consolidated Python dependencies for the whole repo. Install with:
+#   pip install -r requirements.txt
+#
+# This repo has three independent Python pieces (see README.md) - none of
+# them import from each other, so you only strictly need the section(s) for
+# what you're actually running. This file just saves you from hunting
+# through three folders when you want everything.
+#
+# Requires Python 3.10+ (aros_backend uses `X | None` type hints).
+
+# ---- pos-system/ (Hegxib POS - the actual point-of-sale app) ----
+# Uses only the standard library (tkinter, sqlite3, csv, datetime) except
+# for the optional Tamil Nadu multi-store simulator / sync agent below.
+requests
+
+# ---- HQ_Retail_OS/ (optional central "HQ" receiver for multi-store sync) ----
+flask
+
+# ---- stitch_electron_os_interface/aros_backend/ (AROS analytics desktop app) ----
+fastapi
+uvicorn
+pandas
+pydantic
+
+# ---- Optional: building a standalone pos-system executable ----
+# Only needed if you run pos-system/build_exe.py or build_executable.py.
+# pyinstaller
+
+# ---- Not pip-installable ----
+# tkinter ships with most Python installs on Windows/macOS. On Linux you
+# may need your distro's package instead, e.g.:
+#   sudo apt-get install python3-tk

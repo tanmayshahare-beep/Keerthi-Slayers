@@ -1,0 +1,265 @@
+AROS — HOW THE OLLAMA (LOCAL LLM) INTEGRATION WORKS
+====================================================
+
+This explains exactly how AROS talks to a local language model, file by
+file, so you can maintain it, debug it, or reuse the pattern elsewhere.
+Nothing described here calls out to the internet or any cloud AI API — the
+only network call any of this makes is to http://localhost:11434, which is
+Ollama running on the same machine.
+
+Five files do all the work:
+
+  ollama_client.py   the only file that speaks HTTP to Ollama
+  agents.py          every system prompt + "build these messages" function
+  chat_store.py       in-memory conversation history, one slot per report/plan
+  app.py             FastAPI endpoints that wire the above into HTTP routes
+  (feature files)     reports.py, plans.py, ai_scorecards.py — call agents.py
+                      + ollama_client.py to actually produce a result
+
+------------------------------------------------------------------------
+1. PREREQUISITES
+------------------------------------------------------------------------
+
+- Install Ollama from https://ollama.com and make sure it's running
+  (either the Ollama desktop app in the system tray, or `ollama serve` in
+  a terminal). It listens on 127.0.0.1:11434 by default.
+- Pull a model once: `ollama pull llama3`
+- No API key, no account, no billing — Ollama is just a local HTTP server
+  in front of models stored on disk.
+
+------------------------------------------------------------------------
+2. ollama_client.py — THE ONLY FILE THAT TALKS TO OLLAMA
+------------------------------------------------------------------------
+
+Everything else in the app is Ollama-agnostic; it only ever calls the two
+functions this file exports. If you ever swapped Ollama for a different
+local runtime, this is the only file you'd need to rewrite.
+
+  OLLAMA_URL      = env var OLLAMA_URL, default "http://localhost:11434"
+  DEFAULT_MODEL   = env var AROS_OLLAMA_MODEL, default "llama3"
+  STATUS_TIMEOUT  = 3 seconds  (for the availability check)
+  CHAT_TIMEOUT    = 180 seconds (local CPU inference is slow — give it room)
+
+  is_available() -> bool
+      GET {OLLAMA_URL}/api/tags. True if Ollama responds at all — used by
+      /api/llm/status so the UI can show "model available" without
+      actually running a prompt.
+
+  chat(messages, model=None, num_predict=400) -> str
+      POST {OLLAMA_URL}/api/chat with:
+        {
+          "model": model or DEFAULT_MODEL,
+          "messages": messages,          # [{"role": "...", "content": "..."}]
+          "stream": false,               # one JSON response, not token-by-token
+          "options": {
+            "num_predict": num_predict,  # max output tokens — kept modest
+            "temperature": 0.4           # fairly deterministic, not chatty
+          }
+        }
+      Returns resp.json()["message"]["content"] — just the reply text.
+
+      Every failure mode is caught and re-raised as ONE exception type,
+      OllamaUnavailableError, with a message that's already safe to show
+      directly in the UI:
+        - requests.ConnectionError  -> "Couldn't reach Ollama... run: ollama pull X"
+        - requests.Timeout          -> "Ollama took too long to respond..."
+        - requests.HTTPError        -> parses the error body; if it says
+                                        "not found" -> "Model X isn't pulled
+                                        yet. Run: ollama pull X"; otherwise
+                                        the raw Ollama error message.
+      Callers never see a raw requests exception — just this one type, so
+      every call site in app.py can catch it once and turn it into a clean
+      HTTP 503.
+
+  Model choice: llama3 (8B, ~4.7GB) is the default. phi3 (3.8B) was tried
+  first for being lightweight but gave noticeably shakier multi-step
+  reasoning. Some newer local models — anything Qwen3-family, including
+  the "deepseek-r1" tag (which is actually a Qwen3 distill) — spend their
+  token budget on a hidden "thinking" pass and can come back with an EMPTY
+  message.content at a modest num_predict. llama3 has no such quirk. If
+  you point AROS_OLLAMA_MODEL at one of those, raise num_predict a lot or
+  expect empty replies.
+
+------------------------------------------------------------------------
+3. agents.py — THE PROMPT REGISTRY
+------------------------------------------------------------------------
+
+A single dict, AGENTS, maps an agent name to {display_name, system_prompt}.
+This is the ONLY place any system prompt text lives. Nine agents exist
+today:
+
+  report_explainer          plain-language explanation of a generated Report
+  news_correlator           looks for links between real news and sales data
+  strategy_engine           1st of 6 Plan pipeline agents (see section 5)
+  marketing_engine          2nd
+  leadgen_engine            3rd
+  sales_engine              4th
+  analytics_engine          5th
+  customer_success_engine   6th
+  plan_advisor              answers follow-up chat about a finished Plan
+  scorecard_advisor         Lead Score / Market Readiness / Recommendations /
+                             Executive Summary for the Insights dashboard
+
+get_agent(name) just does AGENTS[name] with a KeyError if it's missing.
+
+Alongside the registry, agents.py has one "build ... messages" function per
+feature — each one's whole job is turning real app data into a
+{"role": ..., "content": ...} list ready to hand to ollama_client.chat():
+
+  build_explainer_messages(report_narrative)
+      [system prompt] + [user: "here's a report, explain it"]
+
+  build_news_correlation_messages(report_narrative, articles, location_label)
+      [system prompt] + [user: sales summary + up to 10 real headlines +
+      "do any of these connect?"]
+
+  build_engine_messages(engine_name, plan, prior_context, real_data_narrative, engine_budget)
+      [system prompt for that one engine] + [user: goal/timeframe/budget
+      header (including this engine's OWN allocated budget share, not the
+      plan total — see section 5) + every earlier engine's narrative,
+      labeled, if any + a real-data narrative if this engine gets one +
+      "give your recommendations"]
+
+  build_plan_chat_seed_messages(plan)
+      [system prompt] + [user: goal/budget/allocation breakdown + every
+      completed engine's full narrative] + [assistant: a CANNED greeting
+      string, not a real model call — there's nothing to compute in a
+      greeting, so it's not worth the latency]
+
+  build_scorecard_messages(narrative, scorecard, location_label, currency)
+      [system prompt] + [user: the real classical scores (Business Health,
+      Growth, Revenue Opportunity, Customer Health, Risk Alerts) + the
+      report-style sales narrative + "produce the scorecard"]
+
+  split_scorecard_response(text) -> dict
+      scorecard_advisor is instructed to reply with four sections marked
+      by literal "## Lead Score" / "## Market Readiness" /
+      "## AI Recommendations" / "## Executive Summary" headers. This
+      function regex-splits the raw reply on those headers into a dict of
+      {section_name: text}. If the model didn't follow the format (small
+      local models don't always), the WHOLE reply is dumped into
+      "Executive Summary" as a fallback rather than silently losing it.
+      This is the one place in the whole integration that depends on the
+      model's output being structured, and it's handled defensively.
+
+------------------------------------------------------------------------
+4. chat_store.py — CONVERSATION MEMORY
+------------------------------------------------------------------------
+
+A plain in-memory dict: {report_or_plan_id: [message, ...]}. No database,
+no file. Restarting the Electron app (which restarts the Python backend)
+wipes all open chat conversations — the Reports and Plans themselves are
+still saved to disk (reports/, plans/), only the back-and-forth Q&A chat
+about them is ephemeral. This is a deliberate tradeoff, not an oversight:
+it's a local single-user desktop app, so there's no multi-session or
+multi-user reason to persist chat transcripts.
+
+  start_conversation(id, messages)   overwrite/create the slot
+  get_conversation(id) -> list|None  read it back, or None if never started
+  append_message(id, role, content)  add one turn
+
+Every "chat" endpoint in app.py follows the same shape: look up the
+conversation, append the user's new message, call ollama_client.chat() on
+the ENTIRE accumulated history (so the model has full context of the
+conversation so far, not just the latest message), append the reply,
+return it.
+
+------------------------------------------------------------------------
+5. HOW EACH FEATURE ACTUALLY WIRES THIS TOGETHER
+------------------------------------------------------------------------
+
+(a) Report chat — POST /api/reports/{id}/send-to-llm
+    reports.get_report(id) -> agents.build_explainer_messages(narrative)
+    -> ollama_client.chat() -> chat_store.start_conversation(id, ...)
+    Follow-ups: POST /api/reports/{id}/chat appends to the same slot.
+
+(b) News correlation — POST /api/reports/{id}/correlate-news
+    Same shape, but first calls news.fetch_news() for the report's own
+    location (real Google News RSS, no API key), then
+    agents.build_news_correlation_messages(narrative, articles, location).
+    This REPLACES whatever conversation send-to-llm may have started for
+    that report — only one active agent conversation per report at a time,
+    by design (see agents.py's module docstring).
+
+(c) Plan pipeline — POST /api/plans/{id}/run/{engine_name}, one call per
+    engine, six calls total, called in order by the frontend so it can
+    show live per-engine progress instead of blocking on all six at once.
+    plans.py's run_engine():
+      1. Refuses out-of-order execution (PermissionError if an earlier
+         engine in ENGINE_ORDER hasn't run yet for this plan).
+      2. Looks up this engine's real-data snapshot if it has one
+         (analytics_engine reuses reports.py's classical analysis;
+         customer_success_engine reuses real recent transactions) via
+         plans._real_data_for() / _real_data_narrative().
+      3. Looks up this engine's OWN budget share via
+         plan["budget_allocation"][engine_name] — the plan's total budget
+         is split once at creation time by ENGINE_BUDGET_WEIGHTS (a fixed,
+         documented percentage split: Marketing 30%, Lead Gen 25%, Sales
+         15%, Customer Success 15%, Analytics 10%, Strategy 5%), so every
+         engine argues from its own real number instead of each one
+         independently claiming the whole budget.
+      4. agents.build_engine_messages(...) -> ollama_client.chat(num_predict=500)
+      5. Saves the reply into plan["engines"][engine_name] and persists
+         the whole plan back to plans/{id}.json.
+    Plan-wide chat — POST /api/plans/{id}/chat — seeds itself the first
+    time via agents.build_plan_chat_seed_messages(plan), which is the only
+    place the WHOLE finished plan (all six narratives) is handed to the
+    model at once.
+
+(d) AI Scorecard — POST /api/scorecard/ai?location=X
+    ai_scorecards.generate(location): pulls the real classical scorecard
+    (report_analysis.compute_scorecard — Business Health, Growth, Revenue
+    Opportunity, Customer Health, Risk Alerts; no LLM involved in
+    computing these) for that location, hands it to
+    agents.build_scorecard_messages(), calls ollama_client.chat(), splits
+    the reply with agents.split_scorecard_response(), and CACHES the
+    result to ai_scorecards/{location}.json — GET /api/scorecard/ai?location=X
+    returns that cache (404 if nothing's been generated yet) so the UI can
+    show the last result immediately instead of starting blank, and
+    "GENERATE AI INSIGHTS" becomes "REGENERATE" once something's cached.
+
+------------------------------------------------------------------------
+6. ERROR HANDLING — THE SAME PATTERN EVERYWHERE
+------------------------------------------------------------------------
+
+Every endpoint above wraps its ollama_client.chat() call the same way:
+
+    try:
+        reply = ollama_client.chat(messages, ...)
+    except ollama_client.OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+...so the frontend always gets a clean HTTP 503 with a human-readable
+`detail` string ("Couldn't reach Ollama...", "Model X isn't pulled yet...",
+etc.) that app.js just displays as-is — never a raw stack trace, never a
+silently hung request past the 180s timeout.
+
+------------------------------------------------------------------------
+7. CONFIGURATION
+------------------------------------------------------------------------
+
+  OLLAMA_URL          where Ollama's API lives. Default http://localhost:11434.
+  AROS_OLLAMA_MODEL   which pulled model to use. Default "llama3".
+
+Both are read once at import time in ollama_client.py via os.environ.get.
+Set them before launching (e.g. `set AROS_OLLAMA_MODEL=gemma3:4b` on
+Windows, then `npm start`), or export them in your shell before running
+uvicorn directly.
+
+------------------------------------------------------------------------
+8. ADDING A NEW AGENT
+------------------------------------------------------------------------
+
+1. Add {display_name, system_prompt} to AGENTS in agents.py.
+2. Write a small build_x_messages(...) function that turns whatever real
+   data this agent needs into a [{"role", "content"}, ...] list — always
+   end the user turn with a direct instruction ("give your
+   recommendations", "explain this", etc.).
+3. Call agents.get_agent()/build_x_messages() + ollama_client.chat() from
+   wherever the feature lives (a new or existing file like reports.py /
+   plans.py), wrapped in the same try/except OllamaUnavailableError shape.
+4. Add a FastAPI route in app.py that calls into that, following the
+   existing endpoints as a template.
+
+That's the entire integration surface — there's no SDK, no framework
+around the model calls, just plain HTTP requests and a prompt registry.
